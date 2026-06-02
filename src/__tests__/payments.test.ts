@@ -57,6 +57,25 @@ describe('Payment Tools', () => {
         days: 60,
       });
     });
+
+    it('#9 merges changes over the current payment so omitted fields are not blanked', async () => {
+      client.get = vi.fn().mockResolvedValue({
+        id: 'payment-123',
+        name: 'Bank Transfer',
+        days: 30,
+        contactId: 'contact-1',
+        bankId: 'bank-1',
+      });
+      await tools.update_payment.handler({ paymentId: 'payment-123', days: 60 });
+      expect(client.get).toHaveBeenCalledWith('/payments/payment-123');
+      // name/contactId/bankId preserved from the current record; days updated; id dropped.
+      expect(client.put).toHaveBeenCalledWith('/payments/payment-123', {
+        name: 'Bank Transfer',
+        days: 60,
+        contactId: 'contact-1',
+        bankId: 'bank-1',
+      });
+    });
   });
 
   describe('delete_payment', () => {

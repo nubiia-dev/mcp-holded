@@ -173,6 +173,19 @@ export const payDocumentSchema = z.object({
   /** Payment date as Unix timestamp integer. */
   date: z.number().int().optional(),
   treasuryId: z.string().optional(),
+  /**
+   * Payment-method catalog id (the `/paymentmethods` id), NOT a bank/treasury id.
+   * Holded's `/pay` endpoint treats the payment method and the bank link as two
+   * separate things — see `bankId`. (EXTENSIONS.md #8.)
+   */
+  paymentmethod: z.string().optional(),
+  /**
+   * Bank/treasury account id to associate the resulting payment with. The `/pay`
+   * endpoint does NOT accept this; the bank link can only be set via
+   * `PUT /payments/{id}` afterwards, so `pay_document` performs that second step
+   * when this is provided. (EXTENSIONS.md #8.)
+   */
+  bankId: z.string().optional(),
 });
 
 export const sendDocumentSchema = z.object({
@@ -190,49 +203,58 @@ export const updateDocumentTrackingSchema = z.object({
   carrier: z.string().optional(),
 });
 
-export const createDocumentSchema = z.object({
-  docType: docTypeEnum,
-  contactId: z.string().min(1),
-  items: z.array(documentItemSchema),
-  /**
-   * Document date as Unix timestamp (integer). Required by the Holded API.
-   * If omitted, Holded will reject the request. Use Math.floor(Date.now() / 1000)
-   * to get the current timestamp.
-   */
-  date: z.number().int(),
-  notes: z.string().optional(),
-  currency: z.string().optional(),
-  /** Document reference number (e.g. invoice number from supplier) */
-  invoiceNum: z.string().optional(),
-  /** Sales channel ID to associate with the document */
-  salesChannelId: z.string().optional(),
-  /** Expense account ID for expense documents */
-  expAccountId: z.string().optional(),
-  /**
-   * Whether to immediately approve (finalize) the document instead of saving it as a draft.
-   *
-   * Defaults to `true` so created documents are visible in the Holded UI by default. When
-   * omitted, the Holded API itself defaults to `false` (draft), and drafts are hidden from
-   * the standard Sales > Invoices list, the contact's Sales tab and global search — they
-   * exist but are not reachable from the UI.
-   *
-   * Pass `false` explicitly only when you intentionally want a draft for later review.
-   *
-   * Note: once a document is approved it is permanently locked by Holded and cannot be
-   * deleted or freely edited.
-   */
-  approveDoc: z.boolean().optional(),
-});
+/** Document types Holded treats as purchases (supplier-side documents). */
+export const PURCHASE_DOC_TYPES = new Set<string>(['purchase', 'purchaserefund', 'purchaseorder']);
 
-export const updateDocumentSchema = documentIdSchema.merge(
-  z.object({
-    contactId: z.string().optional(),
-    items: z.array(documentItemSchema).optional(),
+/**
+ * Cross-field validation shared by create/update document schemas. Rejects two
+ * silent-fail traps where Holded accepts a write but ignores the field, so the
+ * caller never learns the value was dropped:
+ *
+ * - **#7** — `account` on a line item. The expense/income account must be set at
+ *   document level via `expAccountId`, which cascades to every line; a line-level
+ *   `account` is silently ignored.
+ * - **#11** — `retention` (IRPF) on a purchase document. There is no API to set
+ *   it on purchases (UI-only), so accepting it would report a false success.
+ *
+ * @param data - The parsed document payload.
+ * @param ctx - Zod refinement context used to attach validation issues.
+ */
+function assertDocumentWriteSafety(
+  data: { docType?: string; items?: Array<Record<string, unknown>>; retention?: number },
+  ctx: z.RefinementCtx
+): void {
+  data.items?.forEach((item, index) => {
+    if (item && typeof item === 'object' && 'account' in item) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items', index, 'account'],
+        message:
+          'Holded silently ignores `account` on document line items. Set the account at document level via `expAccountId`, which cascades to every line.',
+      });
+    }
+  });
+  if (data.retention !== undefined && data.docType && PURCHASE_DOC_TYPES.has(data.docType)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['retention'],
+      message:
+        'Holded ignores `retention` (IRPF) on purchase documents — it can only be set in the Holded UI. Remove it to avoid a false success, then set the retention manually.',
+    });
+  }
+}
+
+export const createDocumentSchema = z
+  .object({
+    docType: docTypeEnum,
+    contactId: z.string().min(1),
+    items: z.array(documentItemSchema),
     /**
-     * Document date as Unix timestamp (integer).
-     * Required by the Holded API when updating the date field.
+     * Document date as Unix timestamp (integer). Required by the Holded API.
+     * If omitted, Holded will reject the request. Use Math.floor(Date.now() / 1000)
+     * to get the current timestamp.
      */
-    date: z.number().int().optional(),
+    date: z.number().int(),
     notes: z.string().optional(),
     currency: z.string().optional(),
     /** Document reference number (e.g. invoice number from supplier) */
@@ -241,8 +263,51 @@ export const updateDocumentSchema = documentIdSchema.merge(
     salesChannelId: z.string().optional(),
     /** Expense account ID for expense documents */
     expAccountId: z.string().optional(),
+    /**
+     * Retention (IRPF) percentage. Valid on sales documents; rejected on
+     * purchases, where Holded ignores it (UI-only). See {@link assertDocumentWriteSafety}.
+     */
+    retention: z.number().optional(),
+    /**
+     * Whether to immediately approve (finalize) the document instead of saving it as a draft.
+     *
+     * Defaults to `true` so created documents are visible in the Holded UI by default. When
+     * omitted, the Holded API itself defaults to `false` (draft), and drafts are hidden from
+     * the standard Sales > Invoices list, the contact's Sales tab and global search — they
+     * exist but are not reachable from the UI.
+     *
+     * Pass `false` explicitly only when you intentionally want a draft for later review.
+     *
+     * Note: once a document is approved it is permanently locked by Holded and cannot be
+     * deleted or freely edited.
+     */
+    approveDoc: z.boolean().optional(),
   })
-);
+  .superRefine(assertDocumentWriteSafety);
+
+export const updateDocumentSchema = documentIdSchema
+  .merge(
+    z.object({
+      contactId: z.string().optional(),
+      items: z.array(documentItemSchema).optional(),
+      /**
+       * Document date as Unix timestamp (integer).
+       * Required by the Holded API when updating the date field.
+       */
+      date: z.number().int().optional(),
+      notes: z.string().optional(),
+      currency: z.string().optional(),
+      /** Document reference number (e.g. invoice number from supplier) */
+      invoiceNum: z.string().optional(),
+      /** Sales channel ID to associate with the document */
+      salesChannelId: z.string().optional(),
+      /** Expense account ID for expense documents */
+      expAccountId: z.string().optional(),
+      /** Retention (IRPF) percentage. Rejected on purchases (see create). */
+      retention: z.number().optional(),
+    })
+  )
+  .superRefine(assertDocumentWriteSafety);
 
 // Product schemas
 export const productIdSchema = z.object({
@@ -333,7 +398,22 @@ export const createPaymentSchema = z.object({
   days: z.number().int().nonnegative().optional(),
 });
 
-export const updatePaymentSchema = paymentIdSchema.merge(createPaymentSchema.partial());
+export const updatePaymentSchema = paymentIdSchema.merge(createPaymentSchema.partial()).merge(
+  z.object({
+    /**
+     * Bank/treasury account id to link the payment to. `PUT /payments/{id}` is
+     * how a payment gets associated with a bank (the `/pay` endpoint can't do
+     * it). See EXTENSIONS.md #8.
+     */
+    bankId: z.string().optional(),
+    /** Contact id. Re-sent on update because PUT /payments REPLACES the record. */
+    contactId: z.string().optional(),
+    /** Payment date as a Unix timestamp (seconds). */
+    date: z.number().int().optional(),
+    /** Payment amount. */
+    amount: z.number().optional(),
+  })
+);
 
 // Numbering series schemas
 export const numberingSerieIdSchema = z.object({
@@ -351,6 +431,88 @@ export const createNumberingSerieSchema = z.object({
 export const updateNumberingSerieSchema = numberingSerieIdSchema.merge(
   createNumberingSerieSchema.partial().omit({ docType: true })
 );
+
+// Time-tracking (Projects API) schemas
+//
+// The Projects API returns dates as Unix timestamps (seconds, local midnight)
+// and durations in seconds. The optional date filters below accept `YYYY-MM-DD`
+// strings so callers don't have to compute timestamps themselves; the tool layer
+// converts them when comparing against each entry's `date`.
+
+/** ISO calendar date in `YYYY-MM-DD` form (e.g. `2026-03-31`). */
+const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format');
+
+export const listProjectTimesSchema = z.object({
+  /** Restrict results to entries on or after this date (inclusive). */
+  startDate: isoDateSchema.optional(),
+  /** Restrict results to entries on or before this date (inclusive). */
+  endDate: isoDateSchema.optional(),
+  /** When true, keep only approved entries (`approved === 1`). */
+  approvedOnly: z.boolean().optional(),
+  /**
+   * When true, return a flat array of time entries (each enriched with its
+   * project id/name) instead of the nested per-project structure. Convenient
+   * for summing hours across a month.
+   */
+  flatten: z.boolean().optional(),
+});
+
+export const projectTimesSchema = z
+  .object({
+    projectId: z.string().min(1),
+  })
+  .merge(listProjectTimesSchema);
+
+export const projectTimeIdSchema = z.object({
+  projectId: z.string().min(1),
+  timeTrackingId: z.string().min(1),
+});
+
+// Accounting (read-only) schemas
+//
+// The accounting API works in Unix-second timestamps. The daily ledger rejects
+// ranges longer than one year server-side (HTTP 400 "Maximum 1 year between
+// start and end"); we validate that client-side to fail fast with a clear error.
+
+/** Maximum span the daily-ledger endpoint accepts, in seconds (~1 leap year). */
+const MAX_LEDGER_RANGE_SECONDS = 366 * 24 * 60 * 60;
+
+export const dailyLedgerSchema = z
+  .object({
+    /** Range start as a Unix timestamp (seconds). */
+    starttmp: z.number().int().nonnegative(),
+    /** Range end as a Unix timestamp (seconds). */
+    endtmp: z.number().int().nonnegative(),
+    /**
+     * When true, group ledger lines by `entryNumber` so each returned object is
+     * a full double-entry journal entry (asiento) with its lines nested.
+     */
+    groupByEntry: z.boolean().optional(),
+  })
+  .refine((v) => v.endtmp >= v.starttmp, {
+    message: 'endtmp must be greater than or equal to starttmp',
+    path: ['endtmp'],
+  })
+  .refine((v) => v.endtmp - v.starttmp <= MAX_LEDGER_RANGE_SECONDS, {
+    message: 'Date range must not exceed 1 year (Holded rejects longer spans)',
+    path: ['endtmp'],
+  });
+
+// Banking (EXPERIMENTAL — undocumented internal API) schemas
+//
+// Bank-feed reconciliation lives on Holded's internal API
+// (`/internal/banking/...`), which is not part of the public contract. These
+// schemas exist so the experimental tool validates its identifiers, but the
+// endpoint itself is unverified — see `src/tools/banking.ts`.
+
+export const reconcileBankTransactionSchema = z.object({
+  /** Holded bank account id (the bank-feed account, not a treasury id). */
+  accountId: z.string().min(1),
+  /** Bank-feed transaction id to reconcile. */
+  transactionId: z.string().min(1),
+  /** Optional accounting entry / document id to match the transaction against. */
+  entryId: z.string().min(1).optional(),
+});
 
 /**
  * Validation utility function

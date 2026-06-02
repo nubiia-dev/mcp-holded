@@ -11,7 +11,7 @@ A Model Context Protocol (MCP) server for the Holded Invoice API. This server al
 
 This MCP server provides access to the complete Holded Invoice API:
 
-- **Documents** (16 tools): Create, list, update, delete invoices, estimates, credit notes, etc. Also pay, send, get PDF, ship items, and more.
+- **Documents** (17 tools): Create, list, update, delete invoices, estimates, credit notes, etc. Also pay, send, get PDF, ship items, read a document's payments (`get_document_payments`), and more.
 - **Contacts** (7 tools): Manage clients and suppliers with attachments.
 - **Products** (9 tools): Full product management including images and stock.
 - **Treasuries** (3 tools): Manage treasury accounts.
@@ -25,7 +25,7 @@ This MCP server provides access to the complete Holded Invoice API:
 - **Remittances** (2 tools): Access remittance data.
 - **Services** (5 tools): Manage services.
 
-**Total: 72 tools**
+**Total: 73 tools**
 
 ## Installation
 
@@ -108,6 +108,14 @@ Once configured, you can ask Claude to:
 - "Send invoice #123 to the client by email"
 - "Get the PDF of invoice #456"
 - "Mark invoice #789 as paid"
+- "Show me the payments registered against invoice #789"
+
+> **Write-safety note:** Holded's write API returns a success even when it
+> silently ignores a field. The document/payment write tools re-read the record
+> after a write and surface a non-fatal `_warnings[]` array (e.g. a numbering
+> series overriding the requested `invoiceNum`, a currency change that did not
+> persist, or a document that was auto-approved as a side effect of being paid)
+> so the result reflects what Holded actually stored.
 
 ### Contacts
 
