@@ -12,10 +12,71 @@ describe('Expenses Account Tools', () => {
     tools = getExpensesAccountTools(client);
   });
 
+  // Realistic /expensesaccounts shape: the PGC number lives in `accountNum`
+  // (not `code`), alongside the Holded internal `id`.
+  const sampleAccounts = [
+    { id: 'acct-1', name: 'Office Supplies', accountNum: 62900000 },
+    { id: 'acct-2', name: 'Travel', accountNum: 62900001 },
+  ];
+
   describe('list_expenses_accounts', () => {
     it('should list all expenses accounts', async () => {
       await tools.list_expenses_accounts.handler({});
       expect(client.get).toHaveBeenCalledWith('/expensesaccounts');
+    });
+
+    it('surfaces id and accountNum in default fields', async () => {
+      (client.get as any).mockResolvedValue(sampleAccounts);
+
+      const result = (await tools.list_expenses_accounts.handler({})) as {
+        items: Array<Record<string, unknown>>;
+      };
+
+      // Regression: the id and the PGC `accountNum` used to be dropped.
+      expect(result.items[0]).toEqual({
+        id: 'acct-1',
+        name: 'Office Supplies',
+        accountNum: 62900000,
+      });
+      expect(result.items[0].id).toBe('acct-1');
+      expect(result.items[0].accountNum).toBe(62900000);
+    });
+
+    it('returns only the requested fields when `fields` is provided', async () => {
+      (client.get as any).mockResolvedValue(sampleAccounts);
+
+      const result = (await tools.list_expenses_accounts.handler({
+        fields: ['id', 'accountNum'],
+      })) as { items: Array<Record<string, unknown>> };
+
+      expect(result.items[0]).toEqual({ id: 'acct-1', accountNum: 62900000 });
+      expect(result.items[0]).not.toHaveProperty('name');
+    });
+
+    it('returns only counts in summary mode', async () => {
+      (client.get as any).mockResolvedValue(sampleAccounts);
+
+      const result = (await tools.list_expenses_accounts.handler({ summary: true })) as {
+        total: number;
+        totalPages: number;
+      };
+
+      expect(result).toEqual({ total: 2, totalPages: 1 });
+    });
+
+    it('paginates results', async () => {
+      (client.get as any).mockResolvedValue(sampleAccounts);
+
+      const result = (await tools.list_expenses_accounts.handler({ page: 2, pageSize: 1 })) as {
+        items: Array<Record<string, unknown>>;
+        page: number;
+        total: number;
+      };
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe('acct-2');
+      expect(result.page).toBe(2);
+      expect(result.total).toBe(2);
     });
   });
 
