@@ -24,8 +24,10 @@ This MCP server provides access to the complete Holded Invoice API:
 - **Contact Groups** (5 tools): Organize contacts into groups.
 - **Remittances** (2 tools): Access remittance data.
 - **Services** (5 tools): Manage services.
+- **Time Tracking** (3 tools, read-only): Read project time entries from the Projects API (list all, list by project, get one), with optional flattening that adds `hours` for reporting.
+- **Accounting** (2 tools, read-only): Daily ledger (journal) and full chart of accounts from the Accounting API.
 
-**Total: 72 tools**
+**Total: 77 tools**
 
 ## Installation
 
@@ -127,6 +129,16 @@ Once configured, you can ask Claude to:
 - "List all treasuries"
 - "Show me the sales channels"
 
+### Time Tracking
+
+- "List my approved time entries for March 2026"
+- "How many hours did I track on project X last month?"
+
+### Accounting
+
+- "Show me the daily ledger between two dates"
+- "Get the full chart of accounts"
+
 ## Document Types
 
 The API supports these document types:
@@ -147,10 +159,15 @@ The API supports these document types:
 
 ## API Reference
 
-### Base URL
+### Base URLs
+
+Holded exposes several independent APIs. Each tool targets the right one via an
+internal `apiGroup` selector; the invoicing base remains the default:
 
 ```
-https://api.holded.com/api/invoicing/v1/
+https://api.holded.com/api/invoicing/v1/    # documents, contacts, products, treasury, … (default)
+https://api.holded.com/api/projects/v1/     # projects & time tracking
+https://api.holded.com/api/accounting/v1/   # chart of accounts & daily ledger (read-only)
 ```
 
 ### Authentication

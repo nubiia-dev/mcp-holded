@@ -352,6 +352,72 @@ export const updateNumberingSerieSchema = numberingSerieIdSchema.merge(
   createNumberingSerieSchema.partial().omit({ docType: true })
 );
 
+// Time-tracking (Projects API) schemas
+//
+// The Projects API returns dates as Unix timestamps (seconds, local midnight)
+// and durations in seconds. The optional date filters below accept `YYYY-MM-DD`
+// strings so callers don't have to compute timestamps themselves; the tool layer
+// converts them when comparing against each entry's `date`.
+
+/** ISO calendar date in `YYYY-MM-DD` form (e.g. `2026-03-31`). */
+const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format');
+
+export const listProjectTimesSchema = z.object({
+  /** Restrict results to entries on or after this date (inclusive). */
+  startDate: isoDateSchema.optional(),
+  /** Restrict results to entries on or before this date (inclusive). */
+  endDate: isoDateSchema.optional(),
+  /** When true, keep only approved entries (`approved === 1`). */
+  approvedOnly: z.boolean().optional(),
+  /**
+   * When true, return a flat array of time entries (each enriched with its
+   * project id/name) instead of the nested per-project structure. Convenient
+   * for summing hours across a month.
+   */
+  flatten: z.boolean().optional(),
+});
+
+export const projectTimesSchema = z
+  .object({
+    projectId: z.string().min(1),
+  })
+  .merge(listProjectTimesSchema);
+
+export const projectTimeIdSchema = z.object({
+  projectId: z.string().min(1),
+  timeTrackingId: z.string().min(1),
+});
+
+// Accounting (read-only) schemas
+//
+// The accounting API works in Unix-second timestamps. The daily ledger rejects
+// ranges longer than one year server-side (HTTP 400 "Maximum 1 year between
+// start and end"); we validate that client-side to fail fast with a clear error.
+
+/** Maximum span the daily-ledger endpoint accepts, in seconds (~1 leap year). */
+const MAX_LEDGER_RANGE_SECONDS = 366 * 24 * 60 * 60;
+
+export const dailyLedgerSchema = z
+  .object({
+    /** Range start as a Unix timestamp (seconds). */
+    starttmp: z.number().int().nonnegative(),
+    /** Range end as a Unix timestamp (seconds). */
+    endtmp: z.number().int().nonnegative(),
+    /**
+     * When true, group ledger lines by `entryNumber` so each returned object is
+     * a full double-entry journal entry (asiento) with its lines nested.
+     */
+    groupByEntry: z.boolean().optional(),
+  })
+  .refine((v) => v.endtmp >= v.starttmp, {
+    message: 'endtmp must be greater than or equal to starttmp',
+    path: ['endtmp'],
+  })
+  .refine((v) => v.endtmp - v.starttmp <= MAX_LEDGER_RANGE_SECONDS, {
+    message: 'Date range must not exceed 1 year (Holded rejects longer spans)',
+    path: ['endtmp'],
+  });
+
 /**
  * Validation utility function
  */
