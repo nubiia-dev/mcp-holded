@@ -50,12 +50,12 @@
 
   "repository": {
     "type": "git",
-    "url": "https://github.com/iamsamuelfraga/mcp-holded.git"
+    "url": "https://github.com/nubiia-dev/mcp-holded.git"
   },
 
-  "homepage": "https://github.com/iamsamuelfraga/mcp-holded",
-  "documentation": "https://github.com/iamsamuelfraga/mcp-holded#readme",
-  "support": "https://github.com/iamsamuelfraga/mcp-holded/issues",
+  "homepage": "https://github.com/nubiia-dev/mcp-holded",
+  "documentation": "https://github.com/nubiia-dev/mcp-holded#readme",
+  "support": "https://github.com/nubiia-dev/mcp-holded/issues",
 
   "privacy_policies": [
     "https://iamsamuelfraga.github.io/mcp-holded/privacy.html"

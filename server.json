@@ -1,22 +1,22 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
-  "name": "io.github.iamsamuelfraga/mcp-holded",
+  "name": "io.github.nubiia-dev/mcp-holded",
   "description": "Complete Holded Invoice API integration with 72 MCP tools for invoices, contacts, products, and more",
   "version": "1.0.5",
-  "homepage": "https://github.com/iamsamuelfraga/mcp-holded",
+  "homepage": "https://github.com/nubiia-dev/mcp-holded",
   "license": "MIT",
   "author": {
     "name": "Samuel Fraga",
     "url": "https://github.com/iamsamuelfraga"
   },
   "repository": {
-    "url": "https://github.com/iamsamuelfraga/mcp-holded",
+    "url": "https://github.com/nubiia-dev/mcp-holded",
     "source": "github"
   },
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "@iamsamuelfraga/mcp-holded",
+      "identifier": "@nubiia/mcp-holded",
       "version": "1.0.5",
       "runtimeHint": "npx",
       "transport": {

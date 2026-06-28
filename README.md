@@ -1,9 +1,9 @@
 # MCP Holded
 
-[![CI](https://github.com/iamsamuelfraga/mcp-holded/actions/workflows/ci.yml/badge.svg)](https://github.com/iamsamuelfraga/mcp-holded/actions/workflows/ci.yml)
-[![npm version](https://badge.fury.io/js/%40iamsamuelfraga%2Fmcp-holded.svg)](https://www.npmjs.com/package/@iamsamuelfraga/mcp-holded)
+[![CI](https://github.com/nubiia-dev/mcp-holded/actions/workflows/ci.yml/badge.svg)](https://github.com/nubiia-dev/mcp-holded/actions/workflows/ci.yml)
+[![npm version](https://badge.fury.io/js/%40iamsamuelfraga%2Fmcp-holded.svg)](https://www.npmjs.com/package/@nubiia/mcp-holded)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![codecov](https://codecov.io/gh/iamsamuelfraga/mcp-holded/branch/main/graph/badge.svg)](https://codecov.io/gh/iamsamuelfraga/mcp-holded)
+[![codecov](https://codecov.io/gh/nubiia-dev/mcp-holded/branch/main/graph/badge.svg)](https://codecov.io/gh/nubiia-dev/mcp-holded)
 
 A Model Context Protocol (MCP) server for the Holded Invoice API. This server allows AI assistants like Claude to interact with Holded's invoicing, contacts, products, and more.
 
@@ -38,13 +38,13 @@ This MCP server provides access to the complete Holded Invoice API:
 ### Install from npm
 
 ```bash
-npm install -g @iamsamuelfraga/mcp-holded
+npm install -g @nubiia/mcp-holded
 ```
 
 ### Install from source
 
 ```bash
-git clone https://github.com/iamsamuelfraga/mcp-holded.git
+git clone https://github.com/nubiia-dev/mcp-holded.git
 cd mcp-holded
 npm install
 npm run build
@@ -72,7 +72,7 @@ Add to your Claude Desktop config file:
   "mcpServers": {
     "holded": {
       "command": "npx",
-      "args": ["-y", "@iamsamuelfraga/mcp-holded"],
+      "args": ["-y", "@nubiia/mcp-holded"],
       "env": {
         "HOLDED_API_KEY": "your_api_key_here"
       }
@@ -186,7 +186,7 @@ npm run dev
 
 For questions, issues, or feature requests:
 
-- **GitHub Issues**: [Report an issue](https://github.com/iamsamuelfraga/mcp-holded/issues)
+- **GitHub Issues**: [Report an issue](https://github.com/nubiia-dev/mcp-holded/issues)
 - **Email**: samuel.fraga@nevent.es
 - **Documentation**: [Holded API Docs](https://developers.holded.com/reference/documents)
 

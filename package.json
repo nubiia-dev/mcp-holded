@@ -1,6 +1,6 @@
 {
-  "name": "@iamsamuelfraga/mcp-holded",
-  "mcpName": "io.github.iamsamuelfraga/mcp-holded",
+  "name": "@nubiia/mcp-holded",
+  "mcpName": "io.github.nubiia-dev/mcp-holded",
   "version": "1.6.0",
   "description": "MCP Server for Holded Invoice API",
   "main": "dist/index.js",
@@ -19,7 +19,9 @@
     "lint:fix": "eslint src --fix",
     "format": "prettier --write src",
     "format:check": "prettier --check src",
-    "prepare": "husky"
+    "prepare": "husky",
+    "prepublishOnly": "npm run clean && npm run build",
+    "clean": "rm -rf dist"
   },
   "keywords": [
     "mcp",
@@ -32,7 +34,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/iamsamuelfraga/mcp-holded.git"
+    "url": "https://github.com/nubiia-dev/mcp-holded.git"
   },
   "files": [
     "dist",
@@ -75,5 +77,8 @@
       "eslint --fix",
       "prettier --write"
     ]
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
