@@ -2,7 +2,7 @@
   "name": "@nubiia/mcp-holded",
   "mcpName": "io.github.nubiia-dev/mcp-holded",
   "version": "1.7.0",
-  "description": "MCP Server for Holded Invoice API",
+  "description": "MCP server for the Holded API: invoicing, accounting, contacts, products & banking for AI assistants like Claude. Built by Nubiia.",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -25,10 +25,23 @@
   },
   "keywords": [
     "mcp",
+    "model-context-protocol",
     "holded",
+    "holded-api",
     "invoice",
+    "invoicing",
+    "accounting",
+    "facturacion",
+    "contacts",
+    "banking",
+    "erp",
     "api",
-    "claude"
+    "claude",
+    "anthropic",
+    "ai",
+    "llm",
+    "automation",
+    "nubiia"
   ],
   "author": {
     "name": "Nubiia",
