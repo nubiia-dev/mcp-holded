@@ -959,6 +959,142 @@ describe('Document Tools', () => {
     });
   });
 
+  describe('write-safety guards (silent-fail field handling)', () => {
+    it('#7 rejects a line-level `account` on create (use expAccountId instead)', async () => {
+      await expect(
+        tools.create_document.handler({
+          docType: 'purchase' as const,
+          contactId: 'contact-1',
+          items: [{ name: 'Item', units: 1, subtotal: 50, account: 60000000 } as any],
+          date: 1700000000,
+        })
+      ).rejects.toThrow(/expAccountId/);
+    });
+
+    it('#7 rejects a line-level `account` on update', async () => {
+      await expect(
+        tools.update_document.handler({
+          docType: 'invoice' as const,
+          documentId: 'doc-1',
+          items: [{ name: 'Item', units: 1, subtotal: 50, account: 70000000 } as any],
+        })
+      ).rejects.toThrow(/expAccountId/);
+    });
+
+    it('#11 rejects `retention` on a purchase document', async () => {
+      await expect(
+        tools.create_document.handler({
+          docType: 'purchase' as const,
+          contactId: 'contact-1',
+          items: [{ name: 'Item', units: 1, subtotal: 50 }],
+          date: 1700000000,
+          retention: 15,
+        } as any)
+      ).rejects.toThrow(/retention/i);
+    });
+
+    it('#11 allows `retention` on a sales document and forwards it', async () => {
+      await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'contact-1',
+        items: [{ name: 'Service', units: 1, subtotal: 100 }],
+        date: 1700000000,
+        retention: 15,
+      } as any);
+      expect(client.post).toHaveBeenCalledWith('/documents/invoice', {
+        contactId: 'contact-1',
+        items: [{ name: 'Service', units: 1, subtotal: 100 }],
+        date: 1700000000,
+        retention: 15,
+        approveDoc: true,
+      });
+    });
+
+    it('#17 warns when a sales numbering series overrides the requested invoiceNum', async () => {
+      client.post = vi.fn().mockResolvedValue({ id: 'doc-new' });
+      client.get = vi.fn().mockResolvedValue({ invoiceNum: 'FAC-2025-0001' });
+      const result = (await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'contact-1',
+        items: [{ name: 'Service', units: 1, subtotal: 100 }],
+        date: 1700000000,
+        invoiceNum: 'CUSTOM-1',
+      })) as any;
+      expect(client.get).toHaveBeenCalledWith('/documents/invoice/doc-new');
+      expect(result._warnings).toBeDefined();
+      expect(result._warnings[0]).toMatch(/overridden/);
+    });
+
+    it('#17 does not re-read or warn for invoiceNum on a purchase (supplier number preserved)', async () => {
+      client.post = vi.fn().mockResolvedValue({ id: 'doc-new' });
+      client.get = vi.fn().mockResolvedValue({ invoiceNum: 'SOMETHING-ELSE' });
+      const result = (await tools.create_document.handler({
+        docType: 'purchase' as const,
+        contactId: 'contact-1',
+        items: [{ name: 'Part', units: 1, subtotal: 50 }],
+        date: 1700000000,
+        invoiceNum: 'PROV-001',
+      })) as any;
+      expect(client.get).not.toHaveBeenCalled();
+      expect(result._warnings).toBeUndefined();
+    });
+
+    it('#12 warns that a currency change was ignored on update', async () => {
+      client.put = vi.fn().mockResolvedValue({ status: 1 });
+      client.get = vi.fn().mockResolvedValue({ currency: 'EUR' });
+      const result = (await tools.update_document.handler({
+        docType: 'invoice' as const,
+        documentId: 'doc-1',
+        currency: 'USD',
+      })) as any;
+      expect(result._warnings).toBeDefined();
+      expect(result._warnings[0]).toMatch(/currency/i);
+    });
+
+    it('#10 pay_document always warns about the auto-approve side effect', async () => {
+      const result = (await tools.pay_document.handler({
+        docType: 'invoice' as const,
+        documentId: 'doc-1',
+        amount: 100,
+        date: 1700000000,
+      })) as any;
+      expect(result._warnings.some((w: string) => /auto-approved/i.test(w))).toBe(true);
+    });
+
+    it('#8 pay_document links bankId via a second PUT /payments step', async () => {
+      client.post = vi.fn().mockResolvedValue({ id: 'pay-result' });
+      client.get = vi.fn().mockResolvedValue({ paymentsDetail: [{ id: 'paydetail-1' }] });
+      client.put = vi.fn().mockResolvedValue({ status: 1 });
+      const result = (await tools.pay_document.handler({
+        docType: 'invoice' as const,
+        documentId: 'doc-1',
+        amount: 100,
+        bankId: 'bank-9',
+      })) as any;
+      expect(client.post).toHaveBeenCalledWith('/documents/invoice/doc-1/pay', { amount: 100 });
+      expect(client.put).toHaveBeenCalledWith('/payments/paydetail-1', { bankId: 'bank-9' });
+      expect(result._warnings.some((w: string) => /Linked bank account bank-9/.test(w))).toBe(true);
+    });
+
+    it('#16 maps the approved filter to Holded `filter=approved-<n>`', async () => {
+      await tools.list_documents.handler({ docType: 'invoice', approved: '0' });
+      expect(client.get).toHaveBeenCalledWith('/documents/invoice', { filter: 'approved-0' });
+    });
+
+    it('#14 get_document_payments returns the document paymentsDetail', async () => {
+      client.get = vi.fn().mockResolvedValue({ paymentsDetail: [{ id: 'p1', amount: 100 }] });
+      const result = (await tools.get_document_payments.handler({
+        docType: 'invoice' as const,
+        documentId: 'doc-1',
+      })) as any;
+      expect(client.get).toHaveBeenCalledWith('/documents/invoice/doc-1');
+      expect(result).toEqual({
+        documentId: 'doc-1',
+        paymentsDetail: [{ id: 'p1', amount: 100 }],
+      });
+    });
+  });
+
   describe('Virtual pagination', () => {
     it('should return first page of results with page=1', async () => {
       // Mock 100 documents

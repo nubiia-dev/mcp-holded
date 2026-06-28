@@ -1,7 +1,31 @@
 import fetch, { RequestInit } from 'node-fetch';
 import FormData from 'form-data';
 
-const BASE_URL = 'https://api.holded.com/api/invoicing/v1';
+/**
+ * Holded exposes several independent REST APIs, each under its own base path.
+ * Tools select which one they target via the `apiGroup` parameter.
+ *
+ * - `invoicing` — documents, contacts, products, treasury, etc. (the default,
+ *   for backward compatibility with every existing tool).
+ * - `projects` — projects and time tracking
+ *   (`/projects/times`, `/projects/{id}/times/...`).
+ * - `accounting` — the (read-only) accounting layer: chart of accounts and the
+ *   daily ledger / journal (`/chartofaccounts`, `/dailyledger`).
+ * - `internal` — Holded's UNDOCUMENTED internal API (note: no `/v1` segment).
+ *   Currently used only for bank-feed reconciliation (`/internal/banking/...`).
+ *   These endpoints are NOT part of the public contract and may change or break
+ *   without notice; treat tools built on them as experimental and unverified.
+ */
+const API_BASES = {
+  invoicing: 'https://api.holded.com/api/invoicing/v1',
+  projects: 'https://api.holded.com/api/projects/v1',
+  accounting: 'https://api.holded.com/api/accounting/v1',
+  internal: 'https://api.holded.com/api',
+} as const;
+
+export type ApiGroup = keyof typeof API_BASES;
+
+const DEFAULT_API_GROUP: ApiGroup = 'invoicing';
 
 export class HoldedClient {
   private apiKey: string;
@@ -21,9 +45,10 @@ export class HoldedClient {
     method: string,
     endpoint: string,
     body?: unknown,
-    queryParams?: Record<string, string | number>
+    queryParams?: Record<string, string | number>,
+    apiGroup: ApiGroup = DEFAULT_API_GROUP
   ): Promise<T> {
-    let url = `${BASE_URL}${endpoint}`;
+    let url = `${API_BASES[apiGroup]}${endpoint}`;
 
     if (queryParams) {
       const params = new URLSearchParams();
@@ -115,25 +140,37 @@ export class HoldedClient {
     throw lastError || new Error('Request failed after retries');
   }
 
-  async get<T>(endpoint: string, queryParams?: Record<string, string | number>): Promise<T> {
-    return this.request<T>('GET', endpoint, undefined, queryParams);
+  async get<T>(
+    endpoint: string,
+    queryParams?: Record<string, string | number>,
+    apiGroup: ApiGroup = DEFAULT_API_GROUP
+  ): Promise<T> {
+    return this.request<T>('GET', endpoint, undefined, queryParams, apiGroup);
   }
 
-  async post<T>(endpoint: string, body?: unknown): Promise<T> {
-    return this.request<T>('POST', endpoint, body);
+  async post<T>(
+    endpoint: string,
+    body?: unknown,
+    apiGroup: ApiGroup = DEFAULT_API_GROUP
+  ): Promise<T> {
+    return this.request<T>('POST', endpoint, body, undefined, apiGroup);
   }
 
-  async put<T>(endpoint: string, body?: unknown): Promise<T> {
-    return this.request<T>('PUT', endpoint, body);
+  async put<T>(
+    endpoint: string,
+    body?: unknown,
+    apiGroup: ApiGroup = DEFAULT_API_GROUP
+  ): Promise<T> {
+    return this.request<T>('PUT', endpoint, body, undefined, apiGroup);
   }
 
-  async delete<T>(endpoint: string): Promise<T> {
-    return this.request<T>('DELETE', endpoint);
+  async delete<T>(endpoint: string, apiGroup: ApiGroup = DEFAULT_API_GROUP): Promise<T> {
+    return this.request<T>('DELETE', endpoint, undefined, undefined, apiGroup);
   }
 
   // File upload for attachments with retry logic
   async uploadFile(endpoint: string, file: Buffer, filename: string): Promise<unknown> {
-    const url = `${BASE_URL}${endpoint}`;
+    const url = `${API_BASES[DEFAULT_API_GROUP]}${endpoint}`;
     let lastError: Error | null = null;
 
     // Retry loop with exponential backoff

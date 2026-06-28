@@ -11,7 +11,7 @@ export function getPaymentTools(client: HoldedClient) {
     // List Payments
     list_payments: {
       description:
-        'List all payments with optional filters for date range. Supports field filtering to reduce response size.',
+        "List all payments with optional filters for date range. Supports field filtering to reduce response size. NOTE: this endpoint is filtered to the ACTIVE fiscal year, so payments made in a prior year do NOT appear here even if they are linked to documents. For cross-year payment audits, read a document's payments via get_document_payments (the document `paymentsDetail`).",
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -149,7 +149,8 @@ export function getPaymentTools(client: HoldedClient) {
 
     // Update Payment
     update_payment: {
-      description: 'Update an existing payment',
+      description:
+        "Update an existing payment. IMPORTANT: Holded's PUT /payments/{id} REPLACES the record rather than merging, so any field omitted from the body is blanked. To prevent that, this tool first re-reads the current payment and merges your changes over it, preserving fields you did not pass (contactId, bankId, date, ...).",
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -165,13 +166,41 @@ export function getPaymentTools(client: HoldedClient) {
             type: 'number',
             description: 'Days until due',
           },
+          bankId: {
+            type: 'string',
+            description: 'Bank account id to link the payment to',
+          },
+          contactId: {
+            type: 'string',
+            description: 'Contact id associated with the payment',
+          },
+          date: {
+            type: 'number',
+            description: 'Payment date as a Unix timestamp (seconds)',
+          },
+          amount: {
+            type: 'number',
+            description: 'Payment amount',
+          },
         },
         required: ['paymentId'],
       },
       destructiveHint: true,
       handler: withValidation(updatePaymentSchema, async (args) => {
-        const { paymentId, ...body } = args;
-        return client.put(`/payments/${paymentId}`, body);
+        const { paymentId, ...updates } = args;
+        // #9 — PUT /payments/{id} REPLACES the resource. Merge the requested
+        // changes over the current payment so unspecified fields aren't blanked.
+        let base: Record<string, unknown> = {};
+        try {
+          const current = await client.get(`/payments/${paymentId}`);
+          if (current && typeof current === 'object' && !Array.isArray(current)) {
+            base = { ...(current as Record<string, unknown>) };
+            delete base.id;
+          }
+        } catch {
+          // If the current payment can't be fetched, fall back to a plain update.
+        }
+        return client.put(`/payments/${paymentId}`, { ...base, ...updates });
       }),
     },
 

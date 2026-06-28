@@ -20,6 +20,9 @@ import { getContactGroupTools } from './tools/contact-groups.js';
 import { getRemittanceTools } from './tools/remittances.js';
 import { getServiceTools } from './tools/services.js';
 import { getWarehouseTools } from './tools/warehouses.js';
+import { getTimeTrackingTools } from './tools/time-tracking.js';
+import { getAccountingTools } from './tools/accounting.js';
+import { getBankingTools } from './tools/banking.js';
 
 // Initialize multi-tenancy support
 const tenantConfigs = loadTenantConfigs();
@@ -55,8 +58,17 @@ const rateLimiter = new RateLimiter({
     list_documents: { maxRequests: 200, windowMs: 60000 },
     get_contact: { maxRequests: 200, windowMs: 60000 },
     get_document: { maxRequests: 200, windowMs: 60000 },
+    // Read-heavy endpoints that can return large unpaginated payloads
+    list_project_times: { maxRequests: 60, windowMs: 60000 },
+    list_project_times_by_project: { maxRequests: 60, windowMs: 60000 },
+    get_daily_ledger: { maxRequests: 60, windowMs: 60000 },
+    get_chart_of_accounts: { maxRequests: 60, windowMs: 60000 },
   },
 });
+
+// Experimental bank-feed reconciliation hits an undocumented internal Holded API
+// and performs a write. It is opt-in: set HOLDED_ENABLE_EXPERIMENTAL_BANKING=true.
+const EXPERIMENTAL_BANKING_ENABLED = process.env.HOLDED_ENABLE_EXPERIMENTAL_BANKING === 'true';
 
 // Collect all tools
 const allTools = {
@@ -73,6 +85,9 @@ const allTools = {
   ...getRemittanceTools(client),
   ...getServiceTools(client),
   ...getWarehouseTools(client),
+  ...getTimeTrackingTools(client),
+  ...getAccountingTools(client),
+  ...(EXPERIMENTAL_BANKING_ENABLED ? getBankingTools(client) : {}),
 };
 
 // Create server
@@ -157,6 +172,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     ...getRemittanceTools(tenantContext.client),
     ...getServiceTools(tenantContext.client),
     ...getWarehouseTools(tenantContext.client),
+    ...getTimeTrackingTools(tenantContext.client),
+    ...getAccountingTools(tenantContext.client),
+    ...(EXPERIMENTAL_BANKING_ENABLED ? getBankingTools(tenantContext.client) : {}),
   };
 
   const tool = tenantTools[name as keyof typeof tenantTools];
