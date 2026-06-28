@@ -5,7 +5,7 @@ export function getTaxTools(client: HoldedClient) {
     // Get Taxes
     get_taxes: {
       description:
-        'Get all available taxes with pagination support. Supports field filtering to reduce response size.',
+        'Get all available taxes with pagination support. Supports field filtering to reduce response size. Each tax has: `key` (the stable identifier, e.g. "s_iva_21"/"p_iva_21" — this is the value used in a document line\'s `taxes[]`), `id` (mirrors `key`), `name`, `amount` (the percentage as a string, e.g. "21"), `scope` ("sales" or "purchase"), `group` (e.g. "iva"), and `type`.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -25,7 +25,7 @@ export function getTaxTools(client: HoldedClient) {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "name", "percentage"]). Reduces response size by 70-90%. If not provided, returns default fields: id, name, percentage',
+              'Select specific fields to return (e.g., ["key", "name", "amount", "scope"]). Reduces response size. If not provided, returns default fields: id, key, name, amount, scope, group, type. NOTE: the tax rate field is `amount` (not `percentage`) and the identifier is `key`.',
           },
         },
         required: [],
@@ -36,9 +36,11 @@ export function getTaxTools(client: HoldedClient) {
       ) => {
         const taxes = (await client.get('/taxes')) as Array<Record<string, unknown>>;
 
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['id', 'name', 'percentage'];
+        // Field filtering: if fields specified, return only those fields.
+        // Otherwise, return a default set using the API's real field names
+        // (the rate lives in `amount`, the identifier in `key` — not
+        // `percentage`/`id`, which is why the old defaults came back blank).
+        const defaultFields = ['id', 'key', 'name', 'amount', 'scope', 'group', 'type'];
         const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
 
         const filtered = taxes.map((tax) => {

@@ -24,8 +24,11 @@ This MCP server provides access to the complete Holded Invoice API:
 - **Contact Groups** (5 tools): Organize contacts into groups.
 - **Remittances** (2 tools): Access remittance data.
 - **Services** (5 tools): Manage services.
+- **Time Tracking** (2 tools, read-only): List time-tracking entries across projects or for a single project (Holded Projects API).
+- **Accounting** (2 tools, read-only): Get the chart of accounts and the daily ledger.
+- **Banking** (1 tool, experimental): Reconcile a bank-feed transaction against its accounting entry. Uses an undocumented internal Holded API; opt-in via `HOLDED_ENABLE_EXPERIMENTAL_BANKING=true`.
 
-**Total: 72 tools**
+**Total: 76 tools** (+1 experimental banking tool, opt-in)
 
 ## Installation
 

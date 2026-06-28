@@ -9,6 +9,7 @@ import {
   payDocumentSchema,
   sendDocumentSchema,
   updateDocumentTrackingSchema,
+  PURCHASE_DOC_TYPES,
   withValidation,
 } from '../validation.js';
 
@@ -26,12 +27,33 @@ export type DocumentType =
   | 'purchaserefund'
   | 'purchaseorder';
 
+/**
+ * Attach non-fatal `_warnings` to a tool result without dropping the original
+ * payload. Holded frequently returns `{status:1, "Updated"}` even when it
+ * silently ignored a field, so write tools re-GET and surface discrepancies
+ * here rather than throwing (the write itself did happen).
+ *
+ * @param result - The raw Holded response.
+ * @param warnings - Human-readable warnings to surface to the caller.
+ * @returns The result unchanged when there are no warnings, otherwise the
+ *   result augmented with a `_warnings` array.
+ */
+function attachWarnings<T>(result: T, warnings: string[]): T {
+  if (warnings.length === 0) {
+    return result;
+  }
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    return { ...(result as object), _warnings: warnings } as T;
+  }
+  return { value: result, _warnings: warnings } as unknown as T;
+}
+
 export function getDocumentTools(client: HoldedClient) {
   return {
     // List Documents
     list_documents: {
       description:
-        'List all documents of a specific type with optional filters for date range, contact, payment status, and sorting. Supports field filtering to reduce response size.',
+        'List all documents of a specific type with optional filters for date range, contact, payment status, approval, and sorting. Supports field filtering to reduce response size. NOTE: a document carries three INDEPENDENT and sometimes-conflicting flags — (1) the stored Paid/Pending badge `status` (set when the document is imported, NOT recomputed), (2) the real outstanding amount `paymentsPending` (the authoritative math), and (3) approval (filter with `approved`). A document can be badge-Paid, math-unpaid, and not-approved all at once, so check the flag you actually mean.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -86,6 +108,12 @@ export function getDocumentTools(client: HoldedClient) {
             enum: ['0', '1'],
             description: 'Filter by billed status: 0=not billed, 1=billed',
           },
+          approved: {
+            type: 'string',
+            enum: ['0', '1'],
+            description:
+              'Filter by approval state: 0=not approved, 1=approved. Maps to Holded `filter=approved-<n>`. Independent of the Paid/Pending badge and of paymentsPending.',
+          },
           sort: {
             type: 'string',
             enum: ['created-asc', 'created-desc'],
@@ -95,7 +123,7 @@ export function getDocumentTools(client: HoldedClient) {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "contactName", "total"]). Reduces response size by 70-90%. If not provided, returns default fields: id, contact, contactName, date, tax, total, status',
+              'Select specific fields to return (e.g., ["id", "contactName", "total"]). Reduces response size by 70-90%. If not provided, returns default fields: id, contact, contactName, date, tax, total, status, paymentsPending',
           },
         },
         required: ['docType'],
@@ -111,6 +139,7 @@ export function getDocumentTools(client: HoldedClient) {
         contactid?: string;
         paid?: string;
         billed?: string;
+        approved?: string;
         sort?: string;
         fields?: string[];
       }) => {
@@ -128,13 +157,26 @@ export function getDocumentTools(client: HoldedClient) {
         if (args.contactid) queryParams.contactid = args.contactid;
         if (args.paid) queryParams.paid = args.paid;
         if (args.billed) queryParams.billed = args.billed;
+        // #16 — approval is a separate flag exposed via `filter=approved-<n>`.
+        if (args.approved) queryParams.filter = `approved-${args.approved}`;
         if (args.sort) queryParams.sort = args.sort;
         const result = await client.get(`/documents/${args.docType}`, queryParams);
         // Filter to return only essential fields
         if (Array.isArray(result)) {
           // Field filtering: if fields specified, return only those fields
-          // Otherwise, return default minimal set
-          const defaultFields = ['id', 'contact', 'contactName', 'date', 'tax', 'total', 'status'];
+          // Otherwise, return default minimal set. `status` is the stored
+          // Paid/Pending badge; `paymentsPending` is the authoritative
+          // outstanding-amount math — both are surfaced by default (#16).
+          const defaultFields = [
+            'id',
+            'contact',
+            'contactName',
+            'date',
+            'tax',
+            'total',
+            'status',
+            'paymentsPending',
+          ];
           const fieldsToInclude =
             args.fields && args.fields.length > 0 ? args.fields : defaultFields;
 
@@ -183,7 +225,7 @@ export function getDocumentTools(client: HoldedClient) {
     // Create Document
     create_document: {
       description:
-        'Create a new document (invoice, estimate, etc.). By default the document is approved (finalized) so it appears in the Holded UI; pass approveDoc:false to create a draft instead.',
+        'Create a new document (invoice, estimate, purchase, etc.). By default the document is approved (finalized) so it appears in the Holded UI; pass approveDoc:false to create a draft instead. Set the expense/income account at document level via `expAccountId` (it cascades to all lines); a per-line `account` is rejected because Holded ignores it. On SALES documents an auto-incrementing numbering series may OVERRIDE the requested `invoiceNum` — the tool re-reads the created document and returns a `_warnings` note if that happened. On purchases the supplier number in `invoiceNum` is preserved. `retention` (IRPF) is accepted on sales but rejected on purchases (Holded ignores it there).',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -272,6 +314,11 @@ export function getDocumentTools(client: HoldedClient) {
             description:
               'Whether to immediately approve (finalize) the document instead of saving it as a draft. Defaults to true so the document is visible in the Holded UI. When the Holded API receives no value it defaults to draft, and drafts do not appear in Sales > Invoices, the contact Sales tab or global search. Pass false only when you intentionally want a draft. Note: approved documents are permanently locked by Holded.',
           },
+          retention: {
+            type: 'number',
+            description:
+              'IRPF retention percentage. Accepted on SALES documents only; rejected on purchases because Holded silently ignores it there.',
+          },
         },
         required: ['docType', 'contactId', 'items', 'date'],
       },
@@ -279,7 +326,33 @@ export function getDocumentTools(client: HoldedClient) {
       handler: withValidation(createDocumentSchema, async (args) => {
         const { docType, approveDoc, ...rest } = args;
         const body = { ...rest, approveDoc: approveDoc ?? true };
-        return client.post(`/documents/${docType}`, body);
+        const result = (await client.post(`/documents/${docType}`, body)) as Record<
+          string,
+          unknown
+        >;
+        const warnings: string[] = [];
+        // #17 — on sales documents a numbering series may override the requested
+        // invoiceNum. Re-read the created document to confirm what actually stuck.
+        if (body.invoiceNum && !PURCHASE_DOC_TYPES.has(docType)) {
+          const newId = typeof result?.id === 'string' ? result.id : undefined;
+          if (newId) {
+            try {
+              const created = (await client.get(`/documents/${docType}/${newId}`)) as Record<
+                string,
+                unknown
+              >;
+              const persisted = created?.invoiceNum ?? created?.docNumber;
+              if (persisted !== undefined && persisted !== body.invoiceNum) {
+                warnings.push(
+                  `Requested invoiceNum "${body.invoiceNum}" was overridden by the numbering series to "${String(persisted)}".`
+                );
+              }
+            } catch {
+              // Best-effort verification; never fail a successful create on it.
+            }
+          }
+        }
+        return attachWarnings(result, warnings);
       }),
     },
 
@@ -316,6 +389,49 @@ export function getDocumentTools(client: HoldedClient) {
       readOnlyHint: true,
       handler: withValidation(documentIdSchema, async (args) => {
         return client.get(`/documents/${args.docType}/${args.documentId}`);
+      }),
+    },
+
+    // Get Document Payments (cross-year)
+    get_document_payments: {
+      description:
+        "Get the payments registered against a specific document, read directly from the document's `paymentsDetail`. Unlike list_payments — which is filtered to the ACTIVE fiscal year — this surfaces payments from ANY year, so use it for cross-year payment audits (e.g. an invoice dated last year that was paid this year). Returns `{ documentId, paymentsDetail }`. Read-only.",
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          docType: {
+            type: 'string',
+            enum: [
+              'invoice',
+              'salesreceipt',
+              'creditnote',
+              'receiptnote',
+              'estimate',
+              'salesorder',
+              'waybill',
+              'proform',
+              'purchase',
+              'purchaserefund',
+              'purchaseorder',
+            ],
+            description: 'Type of document',
+          },
+          documentId: {
+            type: 'string',
+            description: 'Document ID',
+          },
+        },
+        required: ['docType', 'documentId'],
+      },
+      readOnlyHint: true,
+      handler: withValidation(documentIdSchema, async (args) => {
+        const doc = (await client.get(`/documents/${args.docType}/${args.documentId}`)) as {
+          paymentsDetail?: unknown;
+        };
+        return {
+          documentId: args.documentId,
+          paymentsDetail: Array.isArray(doc?.paymentsDetail) ? doc.paymentsDetail : [],
+        };
       }),
     },
 
@@ -409,13 +525,46 @@ export function getDocumentTools(client: HoldedClient) {
             type: 'string',
             description: 'Expense account ID for expense documents',
           },
+          retention: {
+            type: 'number',
+            description:
+              'IRPF retention percentage. Accepted on SALES documents only; rejected on purchases because Holded silently ignores it there.',
+          },
         },
         required: ['docType', 'documentId'],
       },
       destructiveHint: true,
       handler: withValidation(updateDocumentSchema, async (args) => {
         const { docType, documentId, ...body } = args;
-        return client.put(`/documents/${docType}/${documentId}`, body);
+        const result = (await client.put(`/documents/${docType}/${documentId}`, body)) as Record<
+          string,
+          unknown
+        >;
+        const warnings: string[] = [];
+        // #12 — Holded ignores `currency`/`currencyChange` on PUT; the document
+        // keeps its original currency. Re-GET to confirm and warn if it didn't
+        // change, so the caller doesn't assume an FX conversion that never ran.
+        if (body.currency) {
+          try {
+            const current = (await client.get(`/documents/${docType}/${documentId}`)) as Record<
+              string,
+              unknown
+            >;
+            const persisted = current?.currency;
+            if (persisted !== undefined && persisted !== body.currency) {
+              warnings.push(
+                `Holded ignored the currency change to "${body.currency}" on update (still "${String(persisted)}"). Currency/FX can't be changed via the API — book in the target currency at the bank rate instead.`
+              );
+            } else if (persisted === undefined) {
+              warnings.push(
+                'Holded ignores currency/currencyChange on document update; the requested currency change may not have been applied. Verify in Holded.'
+              );
+            }
+          } catch {
+            // Best-effort verification; never fail a successful update on it.
+          }
+        }
+        return attachWarnings(result, warnings);
       }),
     },
 
@@ -457,7 +606,8 @@ export function getDocumentTools(client: HoldedClient) {
 
     // Pay Document
     pay_document: {
-      description: 'Register a payment for a document',
+      description:
+        "Register a payment for a document. IMPORTANT: this AUTO-APPROVES the document as a side effect (status 0→1) — Holded has no separate approve endpoint, and approval cannot be undone via the API. `paymentmethod` is the payment-method catalog id (from list_payment_methods), NOT a bank/treasury id. To link the payment to a bank account, pass `bankId`: the /pay endpoint can't set it, so the tool performs a second step (PUT /payments/{id}) and reports the outcome in `_warnings`.",
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -494,13 +644,56 @@ export function getDocumentTools(client: HoldedClient) {
             type: 'string',
             description: 'Treasury account ID',
           },
+          paymentmethod: {
+            type: 'string',
+            description:
+              'Payment-method catalog id (from list_payment_methods), NOT a bank/treasury id.',
+          },
+          bankId: {
+            type: 'string',
+            description:
+              'Bank account id to link the payment to. Triggers a second step (PUT /payments/{id}) because /pay cannot set the bank link.',
+          },
         },
         required: ['docType', 'documentId', 'amount'],
       },
       destructiveHint: true,
       handler: withValidation(payDocumentSchema, async (args) => {
-        const { docType, documentId, ...body } = args;
-        return client.post(`/documents/${docType}/${documentId}/pay`, body);
+        const { docType, documentId, bankId, ...payBody } = args;
+        const result = (await client.post(
+          `/documents/${docType}/${documentId}/pay`,
+          payBody
+        )) as Record<string, unknown>;
+        // #10 — paying auto-approves the document; surface that clearly. Phrased
+        // conditionally because the document may already have been approved, in
+        // which case no state change happened.
+        const warnings: string[] = [
+          'If the document was not yet approved, registering this payment auto-approved it (status 0→1). Holded has no API to approve without payment or to un-approve afterwards.',
+        ];
+        // #8 — the bank link is a separate step. Resolve the new payment id from
+        // the document's paymentsDetail, then PUT /payments/{id} with bankId.
+        if (bankId) {
+          try {
+            const doc = (await client.get(`/documents/${docType}/${documentId}`)) as {
+              paymentsDetail?: Array<{ id?: string }>;
+            };
+            const payments = Array.isArray(doc?.paymentsDetail) ? doc.paymentsDetail : [];
+            const newest = payments[payments.length - 1];
+            if (newest?.id) {
+              await client.put(`/payments/${newest.id}`, { bankId });
+              warnings.push(`Linked bank account ${bankId} to payment ${newest.id}.`);
+            } else {
+              warnings.push(
+                `Could not resolve the new payment id; set bankId ${bankId} manually via update_payment (PUT /payments/{id}).`
+              );
+            }
+          } catch (error) {
+            warnings.push(
+              `Bank-link step failed: ${error instanceof Error ? error.message : String(error)}. The payment was registered but not linked to bankId ${bankId}.`
+            );
+          }
+        }
+        return attachWarnings(result, warnings);
       }),
     },
 

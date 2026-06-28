@@ -6,7 +6,7 @@ export function getTreasuryTools(client: HoldedClient) {
     // List Treasuries Accounts
     list_treasuries: {
       description:
-        'List all treasury accounts with pagination support. Supports field filtering to reduce response size.',
+        'List all treasury accounts with pagination support. Supports field filtering to reduce response size. WARNING: the `balance` field is a STATIC opening figure, not a live balance derived from transactions — do NOT rely on it for reconciliation or to compute the current cash position.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -112,7 +112,8 @@ export function getTreasuryTools(client: HoldedClient) {
 
     // Get Treasury Account
     get_treasury: {
-      description: 'Get a specific treasury account by ID',
+      description:
+        'Get a specific treasury account by ID. WARNING: the `balance` field is a STATIC opening figure set on the account, not a live balance computed from transactions — do NOT use it for reconciliation or as the current cash position.',
       inputSchema: {
         type: 'object' as const,
         properties: {
