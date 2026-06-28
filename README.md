@@ -4,8 +4,11 @@
 [![npm version](https://badge.fury.io/js/%40nubiia%2Fmcp-holded.svg)](https://www.npmjs.com/package/@nubiia/mcp-holded)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![codecov](https://codecov.io/gh/nubiia-dev/mcp-holded/branch/main/graph/badge.svg)](https://codecov.io/gh/nubiia-dev/mcp-holded)
+[![by Nubiia](https://img.shields.io/badge/by-Nubiia-6C4EE3)](https://nubiia.es)
 
-A Model Context Protocol (MCP) server for the Holded Invoice API. This server allows AI assistants like Claude to interact with Holded's invoicing, contacts, products, and more.
+A Model Context Protocol (MCP) server for the Holded API. This server lets AI assistants like Claude interact with Holded's invoicing, accounting, contacts, products, treasury and more.
+
+> Built and maintained by **[Nubiia](https://nubiia.es)** — automatización e integraciones con IA para negocios (MCP, Holded, Pipedrive y más). ¿Quieres algo así para tu empresa? Escríbenos en **[nubiia.es](https://nubiia.es)**.
 
 ## Features
 
@@ -193,19 +196,27 @@ For questions, issues, or feature requests:
 - **Email**: hola@nubiia.es
 - **Documentation**: [Holded API Docs](https://developers.holded.com/reference/documents)
 
+## About Nubiia
+
+This MCP server is built and maintained by **[Nubiia](https://nubiia.es)**.
+
+[Nubiia](https://nubiia.es) ayuda a empresas a **automatizar procesos e integrar sus herramientas con IA**: servidores MCP a medida, integraciones con [Holded](https://nubiia.es), Pipedrive y otros ERPs/CRMs, y agentes que conectan tus datos de negocio con asistentes como Claude. Este `@nubiia/mcp-holded` es un ejemplo open source de lo que hacemos.
+
+👉 ¿Quieres una integración o automatización con IA para tu negocio? **[nubiia.es](https://nubiia.es)** · ✉️ [hola@nubiia.es](mailto:hola@nubiia.es)
+
 ## License
 
 MIT - See [LICENSE](LICENSE) file for details.
 
 ## Author
 
-Samuel Fraga
+Built by **[Nubiia](https://nubiia.es)** — [nubiia.es](https://nubiia.es) · [hola@nubiia.es](mailto:hola@nubiia.es)
 
-- [GitHub](https://github.com/iamsamuelfraga)
-- [LinkedIn](https://www.linkedin.com/in/samuel-fraga/)
+Maintainer: Samuel Fraga — [GitHub](https://github.com/iamsamuelfraga) · [LinkedIn](https://www.linkedin.com/in/samuel-fraga/)
 
 ## Links
 
+- [Nubiia — AI automation & integrations](https://nubiia.es)
 - [Holded API Documentation](https://developers.holded.com/reference/documents)
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [Privacy Policy](PRIVACY.md)
