@@ -1,7 +1,7 @@
 # MCP Holded
 
 [![CI](https://github.com/nubiia-dev/mcp-holded/actions/workflows/ci.yml/badge.svg)](https://github.com/nubiia-dev/mcp-holded/actions/workflows/ci.yml)
-[![npm version](https://badge.fury.io/js/%40iamsamuelfraga%2Fmcp-holded.svg)](https://www.npmjs.com/package/@nubiia/mcp-holded)
+[![npm version](https://badge.fury.io/js/%40nubiia%2Fmcp-holded.svg)](https://www.npmjs.com/package/@nubiia/mcp-holded)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![codecov](https://codecov.io/gh/nubiia-dev/mcp-holded/branch/main/graph/badge.svg)](https://codecov.io/gh/nubiia-dev/mcp-holded)
 
@@ -187,7 +187,7 @@ npm run dev
 For questions, issues, or feature requests:
 
 - **GitHub Issues**: [Report an issue](https://github.com/nubiia-dev/mcp-holded/issues)
-- **Email**: samuel.fraga@nevent.es
+- **Email**: hola@nubiia.es
 - **Documentation**: [Holded API Docs](https://developers.holded.com/reference/documents)
 
 ## License

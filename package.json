@@ -30,7 +30,11 @@
     "api",
     "claude"
   ],
-  "author": "Samuel Fraga",
+  "author": {
+    "name": "Nubiia",
+    "email": "hola@nubiia.es",
+    "url": "https://nubiia.es"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -80,5 +84,6 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "homepage": "https://nubiia.es"
 }
