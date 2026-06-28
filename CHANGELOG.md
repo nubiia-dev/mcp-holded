@@ -1,3 +1,15 @@
+# [1.7.0](https://github.com/nubiia-dev/mcp-holded/compare/v1.6.0...v1.7.0) (2026-06-28)
+
+
+### Bug Fixes
+
+* default approveDoc to true in create_document ([e9f6cca](https://github.com/nubiia-dev/mcp-holded/commit/e9f6cca7ded45e2c489c506043ca72588f931676)), closes [#51](https://github.com/nubiia-dev/mcp-holded/issues/51)
+
+
+### Features
+
+* integrate read-only Projects/Accounting tools, experimental Banking, and document write-safety ([#78](https://github.com/nubiia-dev/mcp-holded/issues/78)) ([ce2c79b](https://github.com/nubiia-dev/mcp-holded/commit/ce2c79b65f4c64f1ac1d760bfe6e902915aa47aa)), closes [#57](https://github.com/nubiia-dev/mcp-holded/issues/57) [#54](https://github.com/nubiia-dev/mcp-holded/issues/54) [#55](https://github.com/nubiia-dev/mcp-holded/issues/55) [#57](https://github.com/nubiia-dev/mcp-holded/issues/57) [#57](https://github.com/nubiia-dev/mcp-holded/issues/57) [#56](https://github.com/nubiia-dev/mcp-holded/issues/56) [#55](https://github.com/nubiia-dev/mcp-holded/issues/55) [#57](https://github.com/nubiia-dev/mcp-holded/issues/57)
+
 # [1.6.0](https://github.com/iamsamuelfraga/mcp-holded/compare/v1.5.1...v1.6.0) (2026-04-20)
 
 
