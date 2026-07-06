@@ -39,7 +39,10 @@ describe('Treasury v2 Tools — bank accounts & movements', () => {
 
   it('movement tools address the account subresources', async () => {
     (client.get as any).mockResolvedValue([{ id: 'm1' }]);
-    const bankMovementsResult = await tools.list_bank_movements.handler({ accountId: 'a1', limit: 50 });
+    const bankMovementsResult = await tools.list_bank_movements.handler({
+      accountId: 'a1',
+      limit: 50,
+    });
     expect(client.get).toHaveBeenCalledWith(
       '/treasury/accounts/a1/bank-movements',
       { limit: 50 },

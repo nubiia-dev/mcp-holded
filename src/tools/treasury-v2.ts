@@ -181,8 +181,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
     },
 
     list_invoicing_forecasts: {
-      description:
-        'List cashflow invoicing forecasts (Holded API v2). Cursor-paginated.',
+      description: 'List cashflow invoicing forecasts (Holded API v2). Cursor-paginated.',
       inputSchema: {
         type: 'object' as const,
         properties: {

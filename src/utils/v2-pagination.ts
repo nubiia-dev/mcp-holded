@@ -33,7 +33,12 @@ export function normalizeV2List(response: unknown): V2ListResult {
   const nextCursor = candidates.find((c) => typeof c === 'string' && c.length > 0) as
     string | undefined;
 
-  const { cursor: _cursor, pagination: _pagination, data: _data, ...rest } = obj;
+  const rest: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (key !== 'cursor' && key !== 'pagination' && key !== 'data') {
+      rest[key] = value;
+    }
+  }
   const result: V2ListResult = { ...rest, items };
   if (nextCursor) {
     result.nextCursor = nextCursor;
