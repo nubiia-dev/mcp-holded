@@ -4,9 +4,11 @@ import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 const DOC_URL = 'https://www.holded.com/es/desarrolladores/referencia-api';
 
 /**
- * Accounting write tools backed by the Holded API v2. Complements the
- * read-only v1 tools (get_chart_of_accounts, get_daily_ledger), which are
- * kept untouched. Registered only when a v2 API key is configured.
+ * List ledger entries and chart of accounts using the Holded API v2.
+ * Complements the read-only tools `get_chart_of_accounts` and `get_daily_ledger`,
+ * both migrated to v2 endpoints (`/accounting-accounts`, `/ledger-entries`) in 2.0.
+ * Consolidation into a single tool pair is planned for release 2.1.
+ * Registered only when a v2 API key is configured.
  */
 export function getLedgerTools(client: HoldedClient) {
   return {

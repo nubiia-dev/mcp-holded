@@ -500,9 +500,9 @@ export const dailyLedgerSchema = z.object({
   /** Range end as an ISO 8601 date string (YYYY-MM-DD), e.g. "2025-12-31". Primary form for v2. */
   end_date: z.string().optional(),
   /** Range start as a Unix timestamp in seconds (legacy backward-compat form). Converted to ISO. */
-  starttmp: z.union([z.number(), z.string()]).optional(),
+  starttmp: z.number().optional(),
   /** Range end as a Unix timestamp in seconds (legacy backward-compat form). Converted to ISO. */
-  endtmp: z.union([z.number(), z.string()]).optional(),
+  endtmp: z.number().optional(),
   /**
    * When true, group ledger lines by `entryNumber` so each returned object is
    * a full double-entry journal entry (asiento) with its lines nested

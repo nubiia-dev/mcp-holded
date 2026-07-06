@@ -183,9 +183,9 @@ export function getAccountingTools(client: HoldedClient) {
       handler: withValidation(dailyLedgerSchema, async (args) => {
         // Resolve start/end: ISO form takes priority; fall back to Unix→ISO conversion
         const startDate =
-          args.start_date ?? toIsoDate(args.starttmp as string | number | undefined);
+          args.start_date ?? toIsoDate(args.starttmp as number | undefined);
         const endDate =
-          args.end_date ?? toIsoDate(args.endtmp as string | number | undefined);
+          args.end_date ?? toIsoDate(args.endtmp as number | undefined);
 
         if (!startDate || !endDate) {
           throw new Error(
