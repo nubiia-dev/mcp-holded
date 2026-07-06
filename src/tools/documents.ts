@@ -22,7 +22,11 @@ export const DOC_RESOURCES: Record<string, string | null> = {
   invoice: '/invoices',
   salesreceipt: '/sales-receipts',
   creditnote: '/credit-notes',
-  receiptnote: '/receipt-notes', // mapping UNVERIFIED — flagged; Task 12 probes it live
+  // Live probe (Task 12) confirmed GET /receipt-notes → 200. receiptnote maps to
+  // /receipt-notes (rectificativas de venta, Sales section). Purchase goods receipts
+  // (albaranes de compra) live under purchase-orders receiving: use docType
+  // 'purchaseorder' + the /receive sub-action, or query /purchase-shipments directly.
+  receiptnote: '/receipt-notes',
   estimate: '/estimates',
   proform: '/proformas',
   salesorder: '/sales-orders',
