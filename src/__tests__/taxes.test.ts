@@ -86,32 +86,30 @@ describe('Tax Tools', () => {
       expect(result.items[0]).not.toHaveProperty('amount');
     });
 
-    it('returns only counts in summary mode', async () => {
+    it('returns full list (no pagination) with items array', async () => {
+      (client.get as any).mockResolvedValue({ items: sampleTaxes });
+
+      const result = (await tools.get_taxes.handler({})) as {
+        items: Array<Record<string, unknown>>;
+      };
+
+      expect(result.items).toHaveLength(2);
+      expect(result).not.toHaveProperty('page');
+      expect(result).not.toHaveProperty('pageSize');
+      expect(result).not.toHaveProperty('total');
+      expect(result).not.toHaveProperty('totalPages');
+    });
+
+    it('returns only count in summary mode', async () => {
       (client.get as any).mockResolvedValue({ items: sampleTaxes });
 
       const result = (await tools.get_taxes.handler({ summary: true })) as {
-        total: number;
-        totalPages: number;
+        count: number;
       };
 
-      expect(result).toEqual({ total: 2, totalPages: 1 });
-    });
-
-    it('paginates results', async () => {
-      (client.get as any).mockResolvedValue({ items: sampleTaxes });
-
-      const result = (await tools.get_taxes.handler({ page: 2, pageSize: 1 })) as {
-        items: Array<Record<string, unknown>>;
-        page: number;
-        total: number;
-        totalPages: number;
-      };
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].key).toBe('p_iva_10');
-      expect(result.page).toBe(2);
-      expect(result.total).toBe(2);
-      expect(result.totalPages).toBe(2);
+      expect(result).toEqual({ count: 2 });
+      expect(result).not.toHaveProperty('total');
+      expect(result).not.toHaveProperty('totalPages');
     });
   });
 });

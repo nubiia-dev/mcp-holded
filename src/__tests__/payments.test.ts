@@ -52,6 +52,7 @@ describe('Payment Tools', () => {
       const result = (await tools.list_payments.handler({})) as any;
       expect(result.items).toEqual(mockItems);
       expect(result.nextCursor).toBe('page:2');
+      expect(result.hasMore).toBe(true);
     });
   });
 
