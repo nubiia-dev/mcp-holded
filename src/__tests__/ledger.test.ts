@@ -19,6 +19,16 @@ describe('Ledger Tools (api v2)', () => {
     expect(result).toEqual({ items: [{ id: '1' }], nextCursor: 'abc' });
   });
 
+  it('list_ledger_entries forwards start_date and end_date as query params', async () => {
+    (client.get as any).mockResolvedValue({ items: [] });
+    await tools.list_ledger_entries.handler({ start_date: '2025-01-01', end_date: '2025-12-31' });
+    expect(client.get).toHaveBeenCalledWith(
+      '/ledger-entries',
+      { start_date: '2025-01-01', end_date: '2025-12-31' },
+      'v2'
+    );
+  });
+
   it('create_ledger_entry posts the entry verbatim', async () => {
     (client.post as any).mockResolvedValue({ id: 'le1' });
     const data = { date: '2026-06-30', lines: [{ account: '6400000000', debit: 100 }] };

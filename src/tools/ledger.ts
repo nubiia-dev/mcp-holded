@@ -12,18 +12,28 @@ export function getLedgerTools(client: HoldedClient) {
   return {
     list_ledger_entries: {
       description:
-        'List journal/ledger entries (Holded API v2). Cursor-paginated: pass the previous response `nextCursor` as `cursor`. For the v1 read-only daily ledger see get_daily_ledger.',
+        'List journal/ledger entries (Holded API v2). Cursor-paginated: pass the previous response `nextCursor` as `cursor`. ' +
+        'Optionally filter by `start_date`/`end_date` (ISO 8601, e.g. `2025-01-01`) — the v2 endpoint returns 422 if neither date is provided. ' +
+        'For the read-only daily-ledger tool with groupByEntry support and Unix-timestamp backward compat see get_daily_ledger.',
       inputSchema: {
         type: 'object' as const,
         properties: {
           limit: { type: 'number', description: 'Max items per page' },
           cursor: { type: 'string', description: 'Cursor from a previous response nextCursor' },
+          start_date: { type: 'string', description: 'Filter start date (ISO 8601, YYYY-MM-DD)' },
+          end_date: { type: 'string', description: 'Filter end date (ISO 8601, YYYY-MM-DD)' },
         },
         required: [],
       },
       readOnlyHint: true,
-      handler: async (args: { limit?: number; cursor?: string } = {}) =>
-        normalizeV2List(await client.get('/ledger-entries', cursorParams(args), 'v2')),
+      handler: async (
+        args: { limit?: number; cursor?: string; start_date?: string; end_date?: string } = {}
+      ) => {
+        const params: Record<string, string | number> = { ...cursorParams(args) };
+        if (args.start_date !== undefined) params.start_date = args.start_date;
+        if (args.end_date !== undefined) params.end_date = args.end_date;
+        return normalizeV2List(await client.get('/ledger-entries', params, 'v2'));
+      },
     },
 
     create_ledger_entry: {

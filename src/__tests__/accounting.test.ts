@@ -6,65 +6,111 @@ describe('Accounting Tools', () => {
   let client: ReturnType<typeof createMockClient>;
   let tools: ReturnType<typeof getAccountingTools>;
 
-  const start = Math.floor(new Date('2025-01-01T00:00:00Z').getTime() / 1000);
-  const end = Math.floor(new Date('2025-12-31T23:59:59Z').getTime() / 1000);
-
   beforeEach(() => {
     vi.clearAllMocks();
     client = createMockClient();
+    // Default mock returns empty v2 list envelope
+    vi.mocked(client.get).mockResolvedValue({ items: [] });
     tools = getAccountingTools(client);
   });
 
   describe('get_chart_of_accounts', () => {
-    it('targets the accounting API base', async () => {
-      await tools.get_chart_of_accounts.handler();
-      expect(client.get).toHaveBeenCalledWith('/chartofaccounts', undefined, 'accounting');
+    it('targets the v2 /accounting-accounts endpoint', async () => {
+      await tools.get_chart_of_accounts.handler({});
+      expect(client.get).toHaveBeenCalledWith('/accounting-accounts', {}, 'v2');
+    });
+
+    it('passes limit and cursor as query params', async () => {
+      await tools.get_chart_of_accounts.handler({ limit: 50, cursor: 'tok' });
+      expect(client.get).toHaveBeenCalledWith('/accounting-accounts', { limit: 50, cursor: 'tok' }, 'v2');
+    });
+
+    it('passes optional annex filters (archived, start_date, end_date, include_empty) as query params', async () => {
+      await tools.get_chart_of_accounts.handler({
+        archived: true,
+        start_date: '2025-01-01',
+        end_date: '2025-12-31',
+        include_empty: false,
+      });
+      // Booleans are serialised as "true"/"false" strings — standard URL query convention.
+      expect(client.get).toHaveBeenCalledWith(
+        '/accounting-accounts',
+        { archived: 'true', start_date: '2025-01-01', end_date: '2025-12-31', include_empty: 'false' },
+        'v2'
+      );
+    });
+
+    it('normalizes the v2 response envelope', async () => {
+      vi.mocked(client.get).mockResolvedValueOnce({ items: [{ id: 'a1' }], nextCursor: 'cur1' });
+      const result = (await tools.get_chart_of_accounts.handler({})) as {
+        items: unknown[];
+        nextCursor: string;
+      };
+      expect(result.items).toEqual([{ id: 'a1' }]);
+      expect(result.nextCursor).toBe('cur1');
     });
   });
 
   describe('get_daily_ledger', () => {
-    it('requests the ledger on the accounting API with the timestamp range', async () => {
-      await tools.get_daily_ledger.handler({ starttmp: start, endtmp: end });
+    it('accepts ISO start_date/end_date and calls v2 /ledger-entries', async () => {
+      await tools.get_daily_ledger.handler({ start_date: '2025-01-01', end_date: '2025-12-31' });
       expect(client.get).toHaveBeenCalledWith(
-        '/dailyledger',
-        { starttmp: start, endtmp: end },
-        'accounting'
+        '/ledger-entries',
+        expect.objectContaining({ start_date: '2025-01-01', end_date: '2025-12-31' }),
+        'v2'
       );
     });
 
-    it('rejects a range longer than one year', async () => {
-      const tooLong = start + 400 * 24 * 60 * 60;
-      await expect(
-        tools.get_daily_ledger.handler({ starttmp: start, endtmp: tooLong })
-      ).rejects.toThrow(/1 year/);
+    it('converts starttmp Unix timestamp 1750000000 to start_date "2025-06-15"', async () => {
+      await tools.get_daily_ledger.handler({ starttmp: 1750000000, endtmp: 1751000000 });
+      const [, params] = vi.mocked(client.get).mock.calls[0];
+      expect((params as Record<string, unknown>).start_date).toBe('2025-06-15');
     });
 
-    it('rejects an inverted range', async () => {
-      await expect(
-        tools.get_daily_ledger.handler({ starttmp: end, endtmp: start })
-      ).rejects.toThrow(/greater than or equal/);
+    it('converts starttmp/endtmp to ISO date strings and passes them to v2', async () => {
+      await tools.get_daily_ledger.handler({ starttmp: 1750000000, endtmp: 1751000000 });
+      expect(client.get).toHaveBeenCalledWith(
+        '/ledger-entries',
+        expect.objectContaining({ start_date: '2025-06-15', end_date: '2025-06-27' }),
+        'v2'
+      );
     });
 
-    it('groups lines by entryNumber when requested', async () => {
-      vi.mocked(client.get).mockResolvedValueOnce([
-        { entryNumber: 61, line: 1, type: 'payment', account: 40000018, debit: 11.92, credit: 0 },
-        { entryNumber: 61, line: 2, type: 'payment', account: 57200000, debit: 0, credit: 11.92 },
-        { entryNumber: 62, line: 1, type: 'purchase', account: 60000000, debit: 50, credit: 0 },
-      ]);
+    it('throws the exact error when neither start_date nor starttmp is provided', async () => {
+      await expect(
+        tools.get_daily_ledger.handler({ end_date: '2025-12-31' })
+      ).rejects.toThrow(
+        'get_daily_ledger requires start_date and end_date (ISO) — the Holded API v2 returns 422 without them'
+      );
+    });
+
+    it('throws the exact error when neither end_date nor endtmp is provided', async () => {
+      await expect(
+        tools.get_daily_ledger.handler({ start_date: '2025-01-01' })
+      ).rejects.toThrow(
+        'get_daily_ledger requires start_date and end_date (ISO) — the Holded API v2 returns 422 without them'
+      );
+    });
+
+    it('groups lines by entryNumber when groupByEntry is true (page-scoped)', async () => {
+      vi.mocked(client.get).mockResolvedValueOnce({
+        items: [
+          { entryNumber: 61, line: 1, type: 'payment', account: 40000018, debit: 11.92, credit: 0 },
+          { entryNumber: 61, line: 2, type: 'payment', account: 57200000, debit: 0, credit: 11.92 },
+          { entryNumber: 62, line: 1, type: 'purchase', account: 60000000, debit: 50, credit: 0 },
+        ],
+      });
       const result = (await tools.get_daily_ledger.handler({
-        starttmp: start,
-        endtmp: end,
+        start_date: '2025-01-01',
+        end_date: '2025-12-31',
         groupByEntry: true,
-      })) as Array<{
-        entryNumber: number;
-        lines: unknown[];
-        totalDebit: number;
-        totalCredit: number;
-      }>;
-      expect(result).toHaveLength(2);
-      expect(result[0]).toMatchObject({ entryNumber: 61, totalDebit: 11.92, totalCredit: 11.92 });
-      expect(result[0].lines).toHaveLength(2);
-      expect(result[1]).toMatchObject({ entryNumber: 62, totalDebit: 50, totalCredit: 0 });
+      })) as {
+        items: Array<{ entryNumber: number; lines: unknown[]; totalDebit: number; totalCredit: number }>;
+      };
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toMatchObject({ entryNumber: 61, totalDebit: 11.92, totalCredit: 11.92 });
+      expect(result.items[0].lines).toHaveLength(2);
+      expect(result.items[1]).toMatchObject({ entryNumber: 62, totalDebit: 50, totalCredit: 0 });
     });
   });
 });

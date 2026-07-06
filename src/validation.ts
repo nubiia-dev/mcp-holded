@@ -487,33 +487,33 @@ export const projectTimeIdSchema = z.object({
 
 // Accounting (read-only) schemas
 //
-// The accounting API works in Unix-second timestamps. The daily ledger rejects
-// ranges longer than one year server-side (HTTP 400 "Maximum 1 year between
-// start and end"); we validate that client-side to fail fast with a clear error.
+// get_daily_ledger now targets the Holded API v2 (`/ledger-entries`), which
+// requires ISO date strings (`start_date`, `end_date`) rather than Unix
+// timestamps. For backward compatibility the schema also accepts the legacy
+// `starttmp`/`endtmp` fields (Unix seconds); the tool layer converts them via
+// `toIsoDate`. At least one form of each bound must be supplied — the v2
+// endpoint returns 422 without both dates.
 
-/** Maximum span the daily-ledger endpoint accepts, in seconds (~1 leap year). */
-const MAX_LEDGER_RANGE_SECONDS = 366 * 24 * 60 * 60;
-
-export const dailyLedgerSchema = z
-  .object({
-    /** Range start as a Unix timestamp (seconds). */
-    starttmp: z.number().int().nonnegative(),
-    /** Range end as a Unix timestamp (seconds). */
-    endtmp: z.number().int().nonnegative(),
-    /**
-     * When true, group ledger lines by `entryNumber` so each returned object is
-     * a full double-entry journal entry (asiento) with its lines nested.
-     */
-    groupByEntry: z.boolean().optional(),
-  })
-  .refine((v) => v.endtmp >= v.starttmp, {
-    message: 'endtmp must be greater than or equal to starttmp',
-    path: ['endtmp'],
-  })
-  .refine((v) => v.endtmp - v.starttmp <= MAX_LEDGER_RANGE_SECONDS, {
-    message: 'Date range must not exceed 1 year (Holded rejects longer spans)',
-    path: ['endtmp'],
-  });
+export const dailyLedgerSchema = z.object({
+  /** Range start as an ISO 8601 date string (YYYY-MM-DD), e.g. "2025-01-01". Primary form for v2. */
+  start_date: z.string().optional(),
+  /** Range end as an ISO 8601 date string (YYYY-MM-DD), e.g. "2025-12-31". Primary form for v2. */
+  end_date: z.string().optional(),
+  /** Range start as a Unix timestamp in seconds (legacy backward-compat form). Converted to ISO. */
+  starttmp: z.union([z.number(), z.string()]).optional(),
+  /** Range end as a Unix timestamp in seconds (legacy backward-compat form). Converted to ISO. */
+  endtmp: z.union([z.number(), z.string()]).optional(),
+  /**
+   * When true, group ledger lines by `entryNumber` so each returned object is
+   * a full double-entry journal entry (asiento) with its lines nested
+   * (page-scoped — applies only to items on the current cursor page).
+   */
+  groupByEntry: z.boolean().optional(),
+  /** Max items per cursor page (v2 default: 50, max: 100). */
+  limit: z.number().int().positive().optional(),
+  /** Cursor token from a previous response `nextCursor`. */
+  cursor: z.string().optional(),
+});
 
 // Banking (EXPERIMENTAL — undocumented internal API) schemas
 //
