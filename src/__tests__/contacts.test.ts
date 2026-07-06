@@ -13,76 +13,65 @@ describe('Contact Tools', () => {
   });
 
   describe('list_contacts', () => {
-    it('should list all contacts', async () => {
+    it('should list contacts with no args via v2', async () => {
       await tools.list_contacts.handler({});
-      expect(client.get).toHaveBeenCalledWith('/contacts', {});
+      expect(client.get).toHaveBeenCalledWith('/contacts', {}, 'v2');
     });
 
-    it('should support pagination with page parameter', async () => {
-      await tools.list_contacts.handler({ page: 3 });
-      expect(client.get).toHaveBeenCalledWith('/contacts', { page: 3 });
-    });
-
-    it('should handle requests without any parameters', async () => {
-      await tools.list_contacts.handler({});
-      expect(client.get).toHaveBeenCalledWith('/contacts', {});
-    });
-
-    it('should support limit parameter for virtual pagination', async () => {
+    it('should pass limit to API', async () => {
       await tools.list_contacts.handler({ limit: 10 });
-      expect(client.get).toHaveBeenCalledWith('/contacts', { limit: 10 });
+      expect(client.get).toHaveBeenCalledWith('/contacts', { limit: 10 }, 'v2');
+    });
+
+    it('should pass cursor to API', async () => {
+      await tools.list_contacts.handler({ cursor: 'page:2' });
+      expect(client.get).toHaveBeenCalledWith('/contacts', { cursor: 'page:2' }, 'v2');
+    });
+
+    it('should pass limit and cursor together', async () => {
+      await tools.list_contacts.handler({ limit: 20, cursor: 'page:3' });
+      expect(client.get).toHaveBeenCalledWith('/contacts', { limit: 20, cursor: 'page:3' }, 'v2');
+    });
+
+    it('should normalize v2 envelope with nextCursor and hasMore', async () => {
+      const mockItems = [
+        { id: 'c1', name: 'Alice' },
+        { id: 'c2', name: 'Bob' },
+      ];
+      client.get = vi.fn().mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
+      const result = (await tools.list_contacts.handler({})) as any;
+      expect(result.items).toEqual(mockItems);
+      expect(result.nextCursor).toBe('page:2');
+      expect(result.hasMore).toBe(true);
+    });
+
+    it('should support fields filtering preserving nextCursor and hasMore', async () => {
+      const mockItems = [{ id: 'c1', name: 'Alice', email: 'alice@example.com' }];
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
+      const result = (await tools.list_contacts.handler({ fields: ['id', 'name'] })) as any;
+      expect(result.items[0]).toEqual({ id: 'c1', name: 'Alice' });
+      expect(result.items[0]).not.toHaveProperty('email');
+      expect(result.nextCursor).toBe('page:2');
+      expect(result.hasMore).toBe(true);
     });
 
     it('should support summary mode', async () => {
-      await tools.list_contacts.handler({ summary: true });
-      expect(client.get).toHaveBeenCalledWith('/contacts', {});
-    });
-
-    it('should support filtering by phone', async () => {
-      await tools.list_contacts.handler({ phone: '+34600000000' });
-      expect(client.get).toHaveBeenCalledWith('/contacts', { phone: '+34600000000' });
-    });
-
-    it('should support filtering by mobile', async () => {
-      await tools.list_contacts.handler({ mobile: '+34700000000' });
-      expect(client.get).toHaveBeenCalledWith('/contacts', { mobile: '+34700000000' });
-    });
-
-    it('should support filtering by customId array', async () => {
-      await tools.list_contacts.handler({ customId: ['CUST-001', 'CUST-002'] });
-      expect(client.get).toHaveBeenCalledWith('/contacts', { 'customId[]': 'CUST-001,CUST-002' });
-    });
-
-    it('should support combining pagination and filters', async () => {
-      await tools.list_contacts.handler({
-        page: 2,
-        phone: '+34600000000',
-      });
-      expect(client.get).toHaveBeenCalledWith('/contacts', {
-        page: 2,
-        phone: '+34600000000',
-      });
-    });
-
-    it('should support combining all parameters', async () => {
-      await tools.list_contacts.handler({
-        page: 1,
-        limit: 25,
-        summary: true,
-        mobile: '+34700000000',
-      });
-      expect(client.get).toHaveBeenCalledWith('/contacts', {
-        page: 1,
-        limit: 25,
-        mobile: '+34700000000',
-      });
+      const mockItems = Array.from({ length: 5 }, (_, i) => ({ id: `c${i}`, name: `Contact ${i}` }));
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
+      const result = (await tools.list_contacts.handler({ summary: true })) as any;
+      expect(result.count).toBe(5);
+      expect(result.hasMore).toBe(true);
     });
   });
 
   describe('create_contact', () => {
-    it('should create a contact with required fields', async () => {
+    it('should create a contact with required fields (v2)', async () => {
       await tools.create_contact.handler({ name: 'Test Contact' });
-      expect(client.post).toHaveBeenCalledWith('/contacts', { name: 'Test Contact' });
+      expect(client.post).toHaveBeenCalledWith('/contacts', { name: 'Test Contact' }, 'v2');
     });
 
     it('should include optional fields including code (NIF/CIF/VAT)', async () => {
@@ -94,18 +83,13 @@ describe('Contact Tools', () => {
         type: 'client' as const,
       };
       await tools.create_contact.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/contacts', args);
+      expect(client.post).toHaveBeenCalledWith('/contacts', args, 'v2');
     });
 
     it('should use code field for NIF/CIF/VAT (not vatnumber)', async () => {
-      // The Holded API uses 'code' for NIF/CIF/VAT — 'vatnumber' does not exist
-      const args = {
-        name: 'Empresa SL',
-        code: 'B98765432',
-      };
+      const args = { name: 'Empresa SL', code: 'B98765432' };
       await tools.create_contact.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/contacts', args);
-      // Verify 'vatnumber' key is NOT present in what's sent to the API
+      expect(client.post).toHaveBeenCalledWith('/contacts', args, 'v2');
       const callArgs = (client.post as ReturnType<typeof vi.fn>).mock.calls[0][1];
       expect(callArgs).not.toHaveProperty('vatnumber');
       expect(callArgs).toHaveProperty('code', 'B98765432');
@@ -122,7 +106,7 @@ describe('Contact Tools', () => {
         },
       };
       await tools.create_contact.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/contacts', args);
+      expect(client.post).toHaveBeenCalledWith('/contacts', args, 'v2');
     });
 
     it('should include contactPersons when provided', async () => {
@@ -134,7 +118,7 @@ describe('Contact Tools', () => {
         ],
       };
       await tools.create_contact.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/contacts', args);
+      expect(client.post).toHaveBeenCalledWith('/contacts', args, 'v2');
     });
 
     it('should reject contactPersons entries missing required name', async () => {
@@ -161,7 +145,7 @@ describe('Contact Tools', () => {
         contactPersons: [{ name: 'Ana García', email: 'ana@empresa.com' }],
       };
       await tools.create_contact.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/contacts', args);
+      expect(client.post).toHaveBeenCalledWith('/contacts', args, 'v2');
     });
 
     it('contactPersons email field should have format: email in inputSchema', () => {
@@ -173,40 +157,39 @@ describe('Contact Tools', () => {
     it('should create contact without contactPersons (field is optional)', async () => {
       const args = { name: 'Solo Contact', email: 'solo@example.com' };
       await tools.create_contact.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/contacts', args);
+      expect(client.post).toHaveBeenCalledWith('/contacts', args, 'v2');
     });
   });
 
   describe('get_contact', () => {
-    it('should get a contact by ID', async () => {
+    it('should get a contact by ID (v2)', async () => {
       await tools.get_contact.handler({ contactId: 'contact-123' });
-      expect(client.get).toHaveBeenCalledWith('/contacts/contact-123');
+      expect(client.get).toHaveBeenCalledWith('/contacts/contact-123', undefined, 'v2');
     });
   });
 
   describe('update_contact', () => {
-    it('should update a contact', async () => {
+    it('should update a contact (v2)', async () => {
       const args = {
         contactId: 'contact-123',
         name: 'Updated Name',
         email: 'updated@example.com',
       };
       await tools.update_contact.handler(args);
-      expect(client.put).toHaveBeenCalledWith('/contacts/contact-123', {
-        name: 'Updated Name',
-        email: 'updated@example.com',
-      });
+      expect(client.put).toHaveBeenCalledWith(
+        '/contacts/contact-123',
+        { name: 'Updated Name', email: 'updated@example.com' },
+        'v2'
+      );
     });
 
     it('should update the code field (NIF/CIF/VAT) correctly', async () => {
-      const args = {
-        contactId: 'contact-123',
-        code: 'A12345678',
-      };
-      await tools.update_contact.handler(args);
-      expect(client.put).toHaveBeenCalledWith('/contacts/contact-123', {
-        code: 'A12345678',
-      });
+      await tools.update_contact.handler({ contactId: 'contact-123', code: 'A12345678' });
+      expect(client.put).toHaveBeenCalledWith(
+        '/contacts/contact-123',
+        { code: 'A12345678' },
+        'v2'
+      );
     });
 
     it('should update contactPersons', async () => {
@@ -215,128 +198,43 @@ describe('Contact Tools', () => {
         contactPersons: [{ name: 'Maria López', email: 'maria@empresa.com' }],
       };
       await tools.update_contact.handler(args);
-      expect(client.put).toHaveBeenCalledWith('/contacts/contact-123', {
-        contactPersons: [{ name: 'Maria López', email: 'maria@empresa.com' }],
-      });
+      expect(client.put).toHaveBeenCalledWith(
+        '/contacts/contact-123',
+        { contactPersons: [{ name: 'Maria López', email: 'maria@empresa.com' }] },
+        'v2'
+      );
     });
   });
 
   describe('delete_contact', () => {
-    it('should delete a contact', async () => {
+    it('should delete a contact (v2)', async () => {
       await tools.delete_contact.handler({ contactId: 'contact-123' });
-      expect(client.delete).toHaveBeenCalledWith('/contacts/contact-123');
+      expect(client.delete).toHaveBeenCalledWith('/contacts/contact-123', 'v2');
     });
   });
 
   describe('list_contact_attachments', () => {
-    it('should list contact attachments', async () => {
+    it('should list contact attachments (v2)', async () => {
       await tools.list_contact_attachments.handler({ contactId: 'contact-123' });
-      expect(client.get).toHaveBeenCalledWith('/contacts/contact-123/attachments');
+      expect(client.get).toHaveBeenCalledWith(
+        '/contacts/contact-123/attachments',
+        undefined,
+        'v2'
+      );
     });
   });
 
   describe('get_contact_attachment', () => {
-    it('should get a specific attachment', async () => {
+    it('should get a specific attachment by filename (v2 breaking change)', async () => {
       await tools.get_contact_attachment.handler({
         contactId: 'contact-123',
-        attachmentId: 'attach-456',
+        filename: 'invoice.pdf',
       });
-      expect(client.get).toHaveBeenCalledWith('/contacts/contact-123/attachments/attach-456');
-    });
-  });
-
-  describe('Virtual pagination', () => {
-    it('should return first page of results with page=1', async () => {
-      // Mock 100 contacts
-      const mockContacts = Array.from({ length: 100 }, (_, i) => ({
-        id: `contact-${i + 1}`,
-        name: `Contact ${i + 1}`,
-        email: `contact${i + 1}@example.com`,
-        customId: `CUST-${i + 1}`,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockContacts);
-
-      const result = (await tools.list_contacts.handler({ page: 1, limit: 10 })) as any;
-
-      expect(result.items).toHaveLength(10);
-      expect(result.items[0].id).toBe('contact-1');
-      expect(result.items[9].id).toBe('contact-10');
-      expect(result.page).toBe(1);
-      expect(result.totalItems).toBe(100);
-      expect(result.totalPages).toBe(10);
-      expect(result.hasMore).toBe(true);
-    });
-
-    it('should return second page of results with page=2', async () => {
-      const mockContacts = Array.from({ length: 100 }, (_, i) => ({
-        id: `contact-${i + 1}`,
-        name: `Contact ${i + 1}`,
-        email: `contact${i + 1}@example.com`,
-        customId: `CUST-${i + 1}`,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockContacts);
-
-      const result = (await tools.list_contacts.handler({ page: 2, limit: 10 })) as any;
-
-      expect(result.items).toHaveLength(10);
-      expect(result.items[0].id).toBe('contact-11');
-      expect(result.items[9].id).toBe('contact-20');
-      expect(result.page).toBe(2);
-      expect(result.hasMore).toBe(true);
-    });
-
-    it('should return last page with hasMore=false', async () => {
-      const mockContacts = Array.from({ length: 25 }, (_, i) => ({
-        id: `contact-${i + 1}`,
-        name: `Contact ${i + 1}`,
-        email: `contact${i + 1}@example.com`,
-        customId: `CUST-${i + 1}`,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockContacts);
-
-      const result = (await tools.list_contacts.handler({ page: 3, limit: 10 })) as any;
-
-      expect(result.items).toHaveLength(5);
-      expect(result.items[0].id).toBe('contact-21');
-      expect(result.items[4].id).toBe('contact-25');
-      expect(result.hasMore).toBe(false);
-    });
-
-    it('should return summary with pagination metadata', async () => {
-      const mockContacts = Array.from({ length: 75 }, (_, i) => ({
-        id: `contact-${i + 1}`,
-        name: `Contact ${i + 1}`,
-        email: `contact${i + 1}@example.com`,
-        customId: `CUST-${i + 1}`,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockContacts);
-
-      const result = (await tools.list_contacts.handler({
-        page: 2,
-        limit: 20,
-        summary: true,
-      })) as any;
-
-      expect(result.count).toBe(75);
-      expect(result.totalPages).toBe(4);
-      expect(result.currentPage).toBe(2);
-      expect(result.hasMore).toBe(true);
-    });
-
-    it('should default to page 1 when page is not specified', async () => {
-      const mockContacts = Array.from({ length: 30 }, (_, i) => ({
-        id: `contact-${i + 1}`,
-        name: `Contact ${i + 1}`,
-        email: `contact${i + 1}@example.com`,
-        customId: `CUST-${i + 1}`,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockContacts);
-
-      const result = (await tools.list_contacts.handler({ limit: 10 })) as any;
-
-      expect(result.items).toHaveLength(10);
-      expect(result.items[0].id).toBe('contact-1');
-      expect(result.page).toBe(1);
+      expect(client.get).toHaveBeenCalledWith(
+        '/contacts/contact-123/attachments/invoice.pdf',
+        undefined,
+        'v2'
+      );
     });
   });
 });

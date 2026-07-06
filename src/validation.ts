@@ -92,7 +92,7 @@ export const updateContactSchema = contactIdSchema.merge(createContactSchema.par
 
 export const contactAttachmentSchema = z.object({
   contactId: z.string().min(1),
-  attachmentId: z.string().min(1),
+  filename: z.string().min(1),
 });
 
 /**

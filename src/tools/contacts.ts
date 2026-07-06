@@ -1,4 +1,5 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 import {
   contactIdSchema,
   contactAttachmentSchema,
@@ -12,40 +13,27 @@ export function getContactTools(client: HoldedClient) {
     // List Contacts
     list_contacts: {
       description:
-        'List all contacts with optional filters for phone, mobile, or custom ID. Supports field filtering to reduce response size.',
+        'List contacts (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          page: {
-            type: 'number',
-            description: 'Page number for pagination (optional)',
-          },
           limit: {
             type: 'number',
-            description: 'Maximum number of items to return (default: 50, max: 500)',
+            description: 'Max items per page (API caps at 100)',
+          },
+          cursor: {
+            type: 'string',
+            description: 'Cursor from a previous response nextCursor',
           },
           summary: {
             type: 'boolean',
             description: 'Return only count and pagination metadata without items (default: false)',
           },
-          phone: {
-            type: 'string',
-            description: 'Filter by exact phone number match',
-          },
-          mobile: {
-            type: 'string',
-            description: 'Filter by exact mobile number match',
-          },
-          customId: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Filter by custom ID(s)',
-          },
           fields: {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "name", "email"]). Reduces response size by 70-90%. If not provided, returns default fields: id, customId, name, email',
+              'Project only these fields per item (e.g. ["id", "name", "email"]). Reduces response size.',
           },
         },
         required: [],
@@ -53,73 +41,38 @@ export function getContactTools(client: HoldedClient) {
       readOnlyHint: true,
       handler: async (
         args: {
-          page?: number;
           limit?: number;
+          cursor?: string;
           summary?: boolean;
-          phone?: string;
-          mobile?: string;
-          customId?: string[];
           fields?: string[];
         } = {}
       ) => {
-        const queryParams: Record<string, string | number> = {};
-        if (args.page) queryParams.page = args.page;
-        if (args.limit) queryParams.limit = Math.min(args.limit, 500);
-        if (args.phone) queryParams.phone = args.phone;
-        if (args.mobile) queryParams.mobile = args.mobile;
-        if (args.customId) queryParams['customId[]'] = args.customId.join(',');
-        const contacts = (await client.get('/contacts', queryParams)) as Array<
-          Record<string, unknown>
-        >;
+        const result = normalizeV2List(
+          await client.get('/contacts', cursorParams(args), 'v2')
+        );
 
-        // Virtual pagination: control context by returning only a window of data
-        const page = args.page ?? 1;
-        const limit = Math.min(args.limit ?? 50, 500);
-
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['id', 'customId', 'name', 'email'];
-        const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
-
-        const filtered = contacts.map((contact) => {
-          const result: Record<string, unknown> = {};
-          for (const field of fieldsToInclude) {
-            if (field in contact) {
-              result[field] = contact[field];
-            }
-          }
-          return result;
-        });
-
-        // Calculate pagination window
-        const startIndex = (page - 1) * limit;
-        const endIndex = startIndex + limit;
-        const items = filtered.slice(startIndex, endIndex);
-
-        // Summary mode: return only count and metadata
-        if (args.summary) {
-          return {
-            count: filtered.length,
-            totalPages: Math.ceil(filtered.length / limit),
-            currentPage: page,
-            hasMore: endIndex < filtered.length,
-          };
+        if (args.fields?.length) {
+          result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
+            const picked: Record<string, unknown> = {};
+            for (const f of args.fields as string[]) if (f in item) picked[f] = item[f];
+            return picked;
+          });
         }
 
-        return {
-          items,
-          page,
-          pageSize: items.length,
-          totalItems: filtered.length,
-          totalPages: Math.ceil(filtered.length / limit),
-          hasMore: endIndex < filtered.length,
-        };
+        if (args.summary) {
+          const out: Record<string, unknown> = { count: result.items.length };
+          if (result.nextCursor) out.nextCursor = result.nextCursor;
+          if (result.hasMore !== undefined) out.hasMore = result.hasMore;
+          return out;
+        }
+
+        return result;
       },
     },
 
     // Create Contact
     create_contact: {
-      description: 'Create a new contact',
+      description: 'Create a new contact (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -192,13 +145,13 @@ export function getContactTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createContactSchema, async (args) => {
-        return client.post('/contacts', args);
+        return client.post('/contacts', args, 'v2');
       }),
     },
 
     // Get Contact
     get_contact: {
-      description: 'Get a specific contact by ID',
+      description: 'Get a specific contact by ID (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -211,13 +164,13 @@ export function getContactTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(contactIdSchema, async (args) => {
-        return client.get(`/contacts/${args.contactId}`);
+        return client.get(`/contacts/${args.contactId}`, undefined, 'v2');
       }),
     },
 
     // Update Contact
     update_contact: {
-      description: 'Update an existing contact',
+      description: 'Update an existing contact (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -295,13 +248,13 @@ export function getContactTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateContactSchema, async (args) => {
         const { contactId, ...body } = args;
-        return client.put(`/contacts/${contactId}`, body);
+        return client.put(`/contacts/${contactId}`, body, 'v2');
       }),
     },
 
     // Delete Contact
     delete_contact: {
-      description: 'Delete a contact',
+      description: 'Delete a contact (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -314,13 +267,13 @@ export function getContactTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(contactIdSchema, async (args) => {
-        return client.delete(`/contacts/${args.contactId}`);
+        return client.delete(`/contacts/${args.contactId}`, 'v2');
       }),
     },
 
     // Get Contact Attachments List
     list_contact_attachments: {
-      description: 'Get list of attachments for a contact',
+      description: 'Get list of attachments for a contact (Holded API v2). Use the filenames from the response with get_contact_attachment.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -333,13 +286,16 @@ export function getContactTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(contactIdSchema, async (args) => {
-        return client.get(`/contacts/${args.contactId}/attachments`);
+        return client.get(`/contacts/${args.contactId}/attachments`, undefined, 'v2');
       }),
     },
 
     // Get Contact Attachment
     get_contact_attachment: {
-      description: 'Get a specific attachment from a contact',
+      description:
+        'Get a specific attachment from a contact by filename (Holded API v2). ' +
+        'BREAKING CHANGE from v1: the path parameter changed from attachmentId (numeric/UUID) to filename (string). ' +
+        'Obtain filenames from list_contact_attachments first.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -347,16 +303,20 @@ export function getContactTools(client: HoldedClient) {
             type: 'string',
             description: 'Contact ID',
           },
-          attachmentId: {
+          filename: {
             type: 'string',
-            description: 'Attachment ID',
+            description: 'Attachment filename as returned by list_contact_attachments',
           },
         },
-        required: ['contactId', 'attachmentId'],
+        required: ['contactId', 'filename'],
       },
       readOnlyHint: true,
       handler: withValidation(contactAttachmentSchema, async (args) => {
-        return client.get(`/contacts/${args.contactId}/attachments/${args.attachmentId}`);
+        return client.get(
+          `/contacts/${args.contactId}/attachments/${args.filename}`,
+          undefined,
+          'v2'
+        );
       }),
     },
   };

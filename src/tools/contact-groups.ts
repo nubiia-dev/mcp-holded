@@ -1,86 +1,66 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 
 export function getContactGroupTools(client: HoldedClient) {
   return {
     // List Contact Groups
     list_contact_groups: {
       description:
-        'List all contact groups with pagination support. Supports field filtering to reduce response size.',
+        'List contact groups (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          page: {
+          limit: {
             type: 'number',
-            description: 'Page number (starting from 1, default: 1)',
+            description: 'Max items per page (API caps at 100)',
           },
-          pageSize: {
-            type: 'number',
-            description: 'Number of items per page (default: 50, max: 500)',
+          cursor: {
+            type: 'string',
+            description: 'Cursor from a previous response nextCursor',
           },
           summary: {
             type: 'boolean',
-            description: 'Return only total count and page count without items (default: false)',
+            description: 'Return only count and pagination metadata without items (default: false)',
           },
           fields: {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "name"]). Reduces response size by 70-90%. If not provided, returns default fields: id, name',
+              'Project only these fields per item (e.g. ["id", "name"]). Reduces response size.',
           },
         },
         required: [],
       },
       readOnlyHint: true,
       handler: async (
-        args: { page?: number; pageSize?: number; summary?: boolean; fields?: string[] } = {}
+        args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const groups = (await client.get('/contactgroups')) as Array<Record<string, unknown>>;
+        const result = normalizeV2List(
+          await client.get('/contact-groups', cursorParams(args), 'v2')
+        );
 
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['id', 'name'];
-        const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
-
-        const filtered = groups.map((group) => {
-          const result: Record<string, unknown> = {};
-          for (const field of fieldsToInclude) {
-            if (field in group) {
-              result[field] = group[field];
-            }
-          }
-          return result;
-        });
-
-        // Pagination
-        const page = Math.max(args.page ?? 1, 1);
-        const pageSize = Math.min(args.pageSize ?? 50, 500);
-        const total = filtered.length;
-        const totalPages = Math.ceil(total / pageSize);
-        const startIndex = (page - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const items = filtered.slice(startIndex, endIndex);
-
-        // Summary mode: return only metadata
-        if (args.summary) {
-          return {
-            total,
-            totalPages,
-          };
+        if (args.fields?.length) {
+          result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
+            const picked: Record<string, unknown> = {};
+            for (const f of args.fields as string[]) if (f in item) picked[f] = item[f];
+            return picked;
+          });
         }
 
-        return {
-          items,
-          page,
-          pageSize,
-          total,
-          totalPages,
-        };
+        if (args.summary) {
+          const out: Record<string, unknown> = { count: result.items.length };
+          if (result.nextCursor) out.nextCursor = result.nextCursor;
+          if (result.hasMore !== undefined) out.hasMore = result.hasMore;
+          return out;
+        }
+
+        return result;
       },
     },
 
     // Create Contact Group
     create_contact_group: {
-      description: 'Create a new contact group',
+      description: 'Create a new contact group (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -93,13 +73,13 @@ export function getContactGroupTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: Record<string, unknown>) => {
-        return client.post('/contactgroups', args);
+        return client.post('/contact-groups', args, 'v2');
       },
     },
 
     // Get Contact Group
     get_contact_group: {
-      description: 'Get a specific contact group by ID',
+      description: 'Get a specific contact group by ID (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -112,13 +92,13 @@ export function getContactGroupTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { groupId: string }) => {
-        return client.get(`/contactgroups/${args.groupId}`);
+        return client.get(`/contact-groups/${args.groupId}`, undefined, 'v2');
       },
     },
 
     // Update Contact Group
     update_contact_group: {
-      description: 'Update an existing contact group',
+      description: 'Update an existing contact group (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -136,13 +116,13 @@ export function getContactGroupTools(client: HoldedClient) {
       destructiveHint: true,
       handler: async (args: { groupId: string; [key: string]: unknown }) => {
         const { groupId, ...body } = args;
-        return client.put(`/contactgroups/${groupId}`, body);
+        return client.put(`/contact-groups/${groupId}`, body, 'v2');
       },
     },
 
     // Delete Contact Group
     delete_contact_group: {
-      description: 'Delete a contact group',
+      description: 'Delete a contact group (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -155,7 +135,7 @@ export function getContactGroupTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: { groupId: string }) => {
-        return client.delete(`/contactgroups/${args.groupId}`);
+        return client.delete(`/contact-groups/${args.groupId}`, 'v2');
       },
     },
   };
