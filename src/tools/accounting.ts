@@ -186,7 +186,8 @@ export function getAccountingTools(client: HoldedClient) {
           },
           limit: {
             type: 'number',
-            description: 'Max items per cursor page (v2 default 50, max 100)',
+            description:
+              'Max items per cursor page (server-paginated; use limit to control page size)',
           },
           cursor: {
             type: 'string',

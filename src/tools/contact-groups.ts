@@ -12,7 +12,7 @@ export function getContactGroupTools(client: HoldedClient) {
         properties: {
           limit: {
             type: 'number',
-            description: 'Max items per page (API caps at 100)',
+            description: 'Max items per page (server-paginated; use limit to control page size)',
           },
           cursor: {
             type: 'string',

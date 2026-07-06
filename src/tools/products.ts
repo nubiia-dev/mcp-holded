@@ -14,13 +14,13 @@ export function getProductTools(client: HoldedClient) {
     // List Products
     list_products: {
       description:
-        'List products (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. API caps at 100 items per page. Response fields are snake_case; amounts are strings with decimal comma.',
+        'List products (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Server-paginated; use limit to control page size. Response fields are snake_case; amounts are strings with decimal comma.',
       inputSchema: {
         type: 'object' as const,
         properties: {
           limit: {
             type: 'number',
-            description: 'Max items per page (API caps at 100)',
+            description: 'Max items per page (server-paginated; use limit to control page size)',
           },
           cursor: {
             type: 'string',

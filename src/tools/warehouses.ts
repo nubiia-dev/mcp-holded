@@ -92,7 +92,7 @@ export function getWarehouseTools(client: HoldedClient) {
     // List Products Stock in Warehouse
     list_warehouse_stock: {
       description:
-        'List all products stock in a specific warehouse (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. API caps at 100 items per page. Supports field filtering to reduce response size.',
+        'List all products stock in a specific warehouse (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Server-paginated; use limit to control page size. Supports field filtering to reduce response size.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -102,7 +102,7 @@ export function getWarehouseTools(client: HoldedClient) {
           },
           limit: {
             type: 'number',
-            description: 'Max items per page (API caps at 100)',
+            description: 'Max items per page (server-paginated; use limit to control page size)',
           },
           cursor: {
             type: 'string',

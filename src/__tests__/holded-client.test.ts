@@ -88,14 +88,15 @@ describe('HoldedClient', () => {
       await expect(client.get('/contacts')).rejects.toThrow('Holded API error (401): Unauthorized');
     });
 
-    it('enriches 403 errors with a scope hint', async () => {
+    it('enriches 403 errors with a hint containing "invalid" and "scope"', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 403,
         text: async () => 'Forbidden',
       });
-
-      await expect(client.get('/salary-records')).rejects.toThrow(/scope/);
+      const err = (await client.get('/salary-records').catch((e) => e)) as Error;
+      expect(err.message).toMatch(/invalid/);
+      expect(err.message).toMatch(/scope/);
     });
   });
 
@@ -233,13 +234,41 @@ describe('HoldedClient', () => {
       );
     });
 
-    it('includes scope hint on 403 response', async () => {
+    it('includes hint with "invalid" and "scope" on 403 response', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 403,
         text: async () => 'Forbidden',
       });
-      await expect((client as any).getBinary('/invoices/doc-1/pdf')).rejects.toThrow(/scope/);
+      const err = await (client as any).getBinary('/invoices/doc-1/pdf').catch((e: Error) => e);
+      expect(err.message).toMatch(/invalid/);
+      expect(err.message).toMatch(/scope/);
+    });
+  });
+
+  describe('error body truncation', () => {
+    it('truncates a 4000-char error body to 500 chars with … [truncated] suffix', async () => {
+      const longBody = 'x'.repeat(4000);
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => longBody,
+      });
+      const err = (await client.get('/contacts').catch((e) => e)) as Error;
+      expect(err.message).toMatch(/… \[truncated\]$/);
+      expect(err.message.length).toBeLessThanOrEqual(600);
+    });
+
+    it('does not truncate a short error body', async () => {
+      const shortBody = 'Short error message';
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => shortBody,
+      });
+      const err = (await client.get('/contacts').catch((e) => e)) as Error;
+      expect(err.message).not.toContain('[truncated]');
+      expect(err.message).toContain(shortBody);
     });
   });
 

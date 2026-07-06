@@ -25,20 +25,27 @@ describe('Payment Tools', () => {
       await tools.list_payments.handler({ limit: 10 });
     });
 
-    it('should forward starttmp and endtmp as query params', async () => {
-      await tools.list_payments.handler({ starttmp: '1700000000', endtmp: '1701000000' });
-      expect(client.get).toHaveBeenCalledWith('/payments', {
-        starttmp: '1700000000',
-        endtmp: '1701000000',
-      });
+    it('should forward start_date and end_date as-is in query params', async () => {
+      await tools.list_payments.handler({ start_date: '2024-01-01', end_date: '2024-12-31' });
+      expect(client.get).toHaveBeenCalledWith(
+        '/payments',
+        expect.objectContaining({ start_date: '2024-01-01', end_date: '2024-12-31' })
+      );
     });
 
-    it('should auto-set endtmp when only starttmp is provided', async () => {
-      await tools.list_payments.handler({ starttmp: '1700000000' });
-      const callArgs = (client.get as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(callArgs[0]).toBe('/payments');
-      expect((callArgs[1] as Record<string, unknown>).starttmp).toBe('1700000000');
-      expect(typeof (callArgs[1] as Record<string, unknown>).endtmp).toBe('string');
+    it('should convert legacy starttmp number to ISO start_date', async () => {
+      // 1700000000 seconds → 2023-11-14T22:13:20.000Z → slice 10 → "2023-11-14"
+      await tools.list_payments.handler({ starttmp: 1700000000 });
+      expect(client.get).toHaveBeenCalledWith(
+        '/payments',
+        expect.objectContaining({ start_date: '2023-11-14' })
+      );
+    });
+
+    it('should prefer start_date over legacy starttmp when both provided', async () => {
+      await tools.list_payments.handler({ start_date: '2024-06-01', starttmp: 1700000000 });
+      const call = (client.get as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect((call[1] as Record<string, unknown>).start_date).toBe('2024-06-01');
     });
 
     it('should normalize v2 envelope and return items', async () => {

@@ -12,13 +12,13 @@ export function getPaymentTools(client: HoldedClient) {
     // List Payments
     list_payments: {
       description:
-        "List all payments (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma. NOTE: this endpoint is filtered to the ACTIVE fiscal year, so payments made in a prior year do NOT appear here even if they are linked to documents. For cross-year payment audits, read a document's payments via get_document_payments (the document `paymentsDetail`). Date filter params (starttmp/endtmp) are forwarded as-is; date filter params pending live verification.",
+        "List all payments (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma. NOTE: this endpoint is filtered to the ACTIVE fiscal year, so payments made in a prior year do NOT appear here even if they are linked to documents. For cross-year payment audits, read a document's payments via get_document_payments (the document `paymentsDetail`). Use start_date/end_date (YYYY-MM-DD) to filter by date — live-verified against v2.",
       inputSchema: {
         type: 'object' as const,
         properties: {
           limit: {
             type: 'number',
-            description: 'Max items per page (API caps at 100)',
+            description: 'Max items per page (server-paginated; use limit to control page size)',
           },
           cursor: {
             type: 'string',
@@ -34,15 +34,25 @@ export function getPaymentTools(client: HoldedClient) {
             description:
               'Select specific fields to return (e.g., ["id", "name", "days", "discount"]). Reduces response size. If not provided, returns all fields from the API.',
           },
-          starttmp: {
+          start_date: {
             type: 'string',
             description:
-              'Starting timestamp (Unix timestamp) for filtering payments by date (pending live verification)',
+              'Filter payments on or after this ISO date (YYYY-MM-DD). Forwarded directly to the v2 API.',
+          },
+          end_date: {
+            type: 'string',
+            description:
+              'Filter payments on or before this ISO date (YYYY-MM-DD). Forwarded directly to the v2 API.',
+          },
+          starttmp: {
+            type: 'number',
+            description:
+              'Legacy: Unix timestamp (seconds) for start date. Converted to ISO YYYY-MM-DD. Ignored when start_date is also provided.',
           },
           endtmp: {
-            type: 'string',
+            type: 'number',
             description:
-              'Ending timestamp (Unix timestamp) for filtering payments by date (pending live verification)',
+              'Legacy: Unix timestamp (seconds) for end date. Converted to ISO YYYY-MM-DD. Ignored when end_date is also provided.',
           },
         },
         required: [],
@@ -54,19 +64,27 @@ export function getPaymentTools(client: HoldedClient) {
           cursor?: string;
           summary?: boolean;
           fields?: string[];
-          starttmp?: string;
-          endtmp?: string;
+          start_date?: string;
+          end_date?: string;
+          starttmp?: number;
+          endtmp?: number;
         } = {}
       ) => {
         const params = cursorParams(args);
-        if (args.starttmp) {
-          params.starttmp = args.starttmp;
-          // If starttmp is provided but endtmp is not, default to current timestamp
-          if (!args.endtmp) {
-            params.endtmp = Math.floor(Date.now() / 1000).toString();
-          }
-        }
-        if (args.endtmp) params.endtmp = args.endtmp;
+        // Resolve start_date: ISO wins over legacy starttmp
+        const startDate =
+          args.start_date ??
+          (args.starttmp !== undefined
+            ? new Date(args.starttmp * 1000).toISOString().slice(0, 10)
+            : undefined);
+        if (startDate) params.start_date = startDate;
+        // Resolve end_date: ISO wins over legacy endtmp
+        const endDate =
+          args.end_date ??
+          (args.endtmp !== undefined
+            ? new Date(args.endtmp * 1000).toISOString().slice(0, 10)
+            : undefined);
+        if (endDate) params.end_date = endDate;
 
         const result = normalizeV2List(await client.get('/payments', params));
 

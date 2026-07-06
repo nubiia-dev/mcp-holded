@@ -34,6 +34,11 @@ export class HoldedClient {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /** Truncate error body to 500 chars to avoid huge error messages. */
+  private truncateErrorText(text: string): string {
+    return text.length > 500 ? text.slice(0, 500) + '… [truncated]' : text;
+  }
+
   private async request<T>(
     method: string,
     endpoint: string,
@@ -75,7 +80,7 @@ export class HoldedClient {
 
         // Check if response should be retried
         if (!response.ok && this.retryableStatusCodes.has(response.status)) {
-          const errorText = await response.text();
+          const errorText = this.truncateErrorText(await response.text());
           lastError = new Error(`Holded API error (${response.status}): ${errorText}`);
 
           // If not last attempt, wait and retry
@@ -90,11 +95,11 @@ export class HoldedClient {
 
         // Non-retryable error
         if (!response.ok) {
-          const errorText = await response.text();
+          const errorText = this.truncateErrorText(await response.text());
           let message = `Holded API error (${response.status}): ${errorText}`;
           if (response.status === 403) {
             message +=
-              ' — the API key may be missing the scope this endpoint requires (e.g. accounting:payrolls.read). Check the key permissions in Holded → Settings → API.';
+              ' — the API key may be invalid, or missing the scope this endpoint requires (Holded returns 403 for both). Check the key and its permissions in Holded → Settings → API.';
           }
           throw new Error(message);
         }
@@ -169,7 +174,7 @@ export class HoldedClient {
         const response = await fetch(url, { method: 'GET', headers });
 
         if (!response.ok && this.retryableStatusCodes.has(response.status)) {
-          const errorText = await response.text();
+          const errorText = this.truncateErrorText(await response.text());
           lastError = new Error(`Holded API error (${response.status}): ${errorText}`);
           if (attempt < this.maxRetries - 1) {
             await this.sleep(this.backoffDelays[attempt]);
@@ -179,11 +184,11 @@ export class HoldedClient {
         }
 
         if (!response.ok) {
-          const errorText = await response.text();
+          const errorText = this.truncateErrorText(await response.text());
           let message = `Holded API error (${response.status}): ${errorText}`;
           if (response.status === 403) {
             message +=
-              ' — the API key may be missing the scope this endpoint requires (e.g. accounting:payrolls.read). Check the key permissions in Holded → Settings → API.';
+              ' — the API key may be invalid, or missing the scope this endpoint requires (Holded returns 403 for both). Check the key and its permissions in Holded → Settings → API.';
           }
           throw new Error(message);
         }
@@ -243,7 +248,7 @@ export class HoldedClient {
 
         // Check if response should be retried
         if (!response.ok && this.retryableStatusCodes.has(response.status)) {
-          const errorText = await response.text();
+          const errorText = this.truncateErrorText(await response.text());
           lastError = new Error(`Holded API error (${response.status}): ${errorText}`);
 
           // If not last attempt, wait and retry
@@ -258,7 +263,7 @@ export class HoldedClient {
 
         // Non-retryable error
         if (!response.ok) {
-          const errorText = await response.text();
+          const errorText = this.truncateErrorText(await response.text());
           throw new Error(`Holded API error (${response.status}): ${errorText}`);
         }
 

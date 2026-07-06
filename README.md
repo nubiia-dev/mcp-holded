@@ -137,7 +137,7 @@ List tools changed from page-based to cursor-based pagination:
 | 1.x argument | 2.x argument | Notes |
 |---|---|---|
 | `page` | *(removed)* | Server no longer accepts offset pages |
-| `pageSize` | `limit` | Max 100 per page |
+| `pageSize` | `limit` | Server-paginated; use limit to control page size |
 | *(none)* | `cursor` | Pass the `nextCursor` from the previous response |
 
 Responses now follow this envelope:
