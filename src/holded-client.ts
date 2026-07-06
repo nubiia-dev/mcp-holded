@@ -15,12 +15,16 @@ import FormData from 'form-data';
  *   Currently used only for bank-feed reconciliation (`/internal/banking/...`).
  *   These endpoints are NOT part of the public contract and may change or break
  *   without notice; treat tools built on them as experimental and unverified.
+ * - `v2` — Holded API v2 (GA June 2026): unified base URL, Bearer auth with scoped
+ *   keys, cursor pagination. Used only for modules v1 does not cover
+ *   (Team/HR, ledger writes, official treasury). Requires a separate key.
  */
 const API_BASES = {
   invoicing: 'https://api.holded.com/api/invoicing/v1',
   projects: 'https://api.holded.com/api/projects/v1',
   accounting: 'https://api.holded.com/api/accounting/v1',
   internal: 'https://api.holded.com/api',
+  v2: 'https://api.holded.com/api/v2',
 } as const;
 
 export type ApiGroup = keyof typeof API_BASES;
@@ -29,12 +33,37 @@ const DEFAULT_API_GROUP: ApiGroup = 'invoicing';
 
 export class HoldedClient {
   private apiKey: string;
+  private apiKeyV2?: string;
   private maxRetries = 3;
   private backoffDelays = [1000, 2000, 4000]; // milliseconds
   private retryableStatusCodes = new Set([429, 502, 503, 504]);
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, apiKeyV2?: string) {
     this.apiKey = apiKey;
+    this.apiKeyV2 = apiKeyV2;
+  }
+
+  hasV2(): boolean {
+    return Boolean(this.apiKeyV2);
+  }
+
+  private buildHeaders(apiGroup: ApiGroup): Record<string, string> {
+    if (apiGroup === 'v2') {
+      if (!this.apiKeyV2) {
+        throw new Error(
+          'Holded API v2 key not configured. Set HOLDED_API_KEY_V2 (or TENANT_N_API_KEY_V2 in multi-tenant mode) ' +
+            'with an sk_live_… key generated in Holded → Settings → API with the scopes this tool needs.'
+        );
+      }
+      return {
+        Authorization: `Bearer ${this.apiKeyV2}`,
+        'Content-Type': 'application/json',
+      };
+    }
+    return {
+      key: this.apiKey,
+      'Content-Type': 'application/json',
+    };
   }
 
   private async sleep(ms: number): Promise<void> {
@@ -63,10 +92,7 @@ export class HoldedClient {
       }
     }
 
-    const headers: Record<string, string> = {
-      key: this.apiKey,
-      'Content-Type': 'application/json',
-    };
+    const headers = this.buildHeaders(apiGroup);
 
     const options: RequestInit = {
       method,
@@ -102,7 +128,12 @@ export class HoldedClient {
         // Non-retryable error
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Holded API error (${response.status}): ${errorText}`);
+          let message = `Holded API error (${response.status}): ${errorText}`;
+          if (response.status === 403 && apiGroup === 'v2') {
+            message +=
+              ' — the v2 API key may be missing the scope this endpoint requires (e.g. accounting:payrolls.read). Check the key permissions in Holded → Settings → API.';
+          }
+          throw new Error(message);
         }
 
         // Success - parse and return response

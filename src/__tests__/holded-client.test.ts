@@ -164,4 +164,64 @@ describe('HoldedClient', () => {
       );
     });
   });
+
+  describe('v2 api group', () => {
+    it('uses the v2 base URL and Bearer auth header', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({ items: [] }),
+      });
+
+      const v2Client = new HoldedClient('v1-key', 'sk_live_test');
+      await v2Client.get('/employees', undefined, 'v2');
+
+      expect(mockFetch).toHaveBeenCalledWith('https://api.holded.com/api/v2/employees', {
+        method: 'GET',
+        headers: {
+          Authorization: 'Bearer sk_live_test',
+          'Content-Type': 'application/json',
+        },
+      });
+    });
+
+    it('throws a configuration error before any network call when the v2 key is missing', async () => {
+      const v1Only = new HoldedClient('v1-key');
+
+      await expect(v1Only.get('/employees', undefined, 'v2')).rejects.toThrow(/HOLDED_API_KEY_V2/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('reports hasV2() based on constructor args', () => {
+      expect(new HoldedClient('k').hasV2()).toBe(false);
+      expect(new HoldedClient('k', 'sk_live_x').hasV2()).toBe(true);
+    });
+
+    it('enriches 403 errors on v2 with a scope hint', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => 'Forbidden',
+      });
+
+      const v2Client = new HoldedClient('v1-key', 'sk_live_test');
+      await expect(v2Client.get('/salary-records', undefined, 'v2')).rejects.toThrow(/scope/);
+    });
+
+    it('keeps the legacy key header for v1 groups even when a v2 key is set', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify([]),
+      });
+
+      const v2Client = new HoldedClient('v1-key', 'sk_live_test');
+      await v2Client.get('/contacts');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.holded.com/api/invoicing/v1/contacts',
+        expect.objectContaining({
+          headers: { key: 'v1-key', 'Content-Type': 'application/json' },
+        })
+      );
+    });
+  });
 });

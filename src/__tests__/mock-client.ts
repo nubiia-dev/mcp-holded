@@ -2,7 +2,7 @@ import { vi } from 'vitest';
 import { HoldedClient } from '../holded-client.js';
 
 export function createMockClient() {
-  const client = new HoldedClient('test-api-key');
+  const client = new HoldedClient('test-api-key', 'test-v2-key');
 
   // Mock all HTTP methods
   vi.spyOn(client, 'get').mockResolvedValue([]);
