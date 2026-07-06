@@ -179,5 +179,78 @@ export function getTreasuryV2Tools(client: HoldedClient) {
           )
         ),
     },
+
+    list_invoicing_forecasts: {
+      description:
+        'List cashflow invoicing forecasts (Holded API v2). Cursor-paginated.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          limit: { type: 'number', description: 'Max items per page' },
+          cursor: { type: 'string', description: 'Cursor from a previous response nextCursor' },
+        },
+        required: [],
+      },
+      readOnlyHint: true,
+      handler: async (args: { limit?: number; cursor?: string } = {}) =>
+        normalizeV2List(
+          await client.get('/treasury/cashflow/invoicing-forecasts', cursorParams(args), 'v2')
+        ),
+    },
+
+    get_invoicing_forecast: {
+      description: 'Get a cashflow invoicing forecast by ID (Holded API v2).',
+      inputSchema: {
+        type: 'object' as const,
+        properties: { forecastId: { type: 'string', description: 'Forecast ID' } },
+        required: ['forecastId'],
+      },
+      readOnlyHint: true,
+      handler: async (args: { forecastId: string }) =>
+        client.get(`/treasury/cashflow/invoicing-forecasts/${args.forecastId}`, undefined, 'v2'),
+    },
+
+    create_invoicing_forecast: {
+      description:
+        `WRITE: creates an invoicing forecast in Holded cashflow (API v2). ` +
+        `\`data\` is sent verbatim as the request body — see ${DOC_URL} (Tesorería → Previsiones).`,
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          data: { type: 'object', description: 'Forecast payload, sent verbatim as body' },
+        },
+        required: ['data'],
+      },
+      handler: async (args: { data: Record<string, unknown> }) =>
+        client.post('/treasury/cashflow/invoicing-forecasts', args.data, 'v2'),
+    },
+
+    update_invoicing_forecast: {
+      description:
+        `WRITE: updates an invoicing forecast in Holded cashflow (API v2). ` +
+        `\`data\` is sent verbatim as the request body — see ${DOC_URL} (Tesorería → Previsiones).`,
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          forecastId: { type: 'string', description: 'Forecast ID' },
+          data: { type: 'object', description: 'Fields to update, sent verbatim as body' },
+        },
+        required: ['forecastId', 'data'],
+      },
+      handler: async (args: { forecastId: string; data: Record<string, unknown> }) =>
+        client.put(`/treasury/cashflow/invoicing-forecasts/${args.forecastId}`, args.data, 'v2'),
+    },
+
+    delete_invoicing_forecast: {
+      description:
+        'DESTRUCTIVE: permanently deletes an invoicing forecast in Holded cashflow (API v2).',
+      inputSchema: {
+        type: 'object' as const,
+        properties: { forecastId: { type: 'string', description: 'Forecast ID' } },
+        required: ['forecastId'],
+      },
+      handler: async (args: { forecastId: string }) =>
+        client.delete(`/treasury/cashflow/invoicing-forecasts/${args.forecastId}`, 'v2'),
+    },
   };
 }

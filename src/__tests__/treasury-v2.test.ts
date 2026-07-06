@@ -64,3 +64,35 @@ describe('Treasury v2 Tools — bank accounts & movements', () => {
     expect(cashMovementsResult).toEqual({ items: [] });
   });
 });
+
+describe('Treasury v2 Tools — invoicing forecasts', () => {
+  let client: ReturnType<typeof createMockClient>;
+  let tools: ReturnType<typeof getTreasuryV2Tools>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client = createMockClient();
+    tools = getTreasuryV2Tools(client);
+  });
+
+  const BASE = '/treasury/cashflow/invoicing-forecasts';
+
+  it('forecast CRUD hits the cashflow routes', async () => {
+    (client.get as any).mockResolvedValue({ items: [] });
+    await tools.list_invoicing_forecasts.handler({});
+    expect(client.get).toHaveBeenCalledWith(BASE, {}, 'v2');
+
+    await tools.get_invoicing_forecast.handler({ forecastId: 'f1' });
+    expect(client.get).toHaveBeenCalledWith(`${BASE}/f1`, undefined, 'v2');
+
+    const data = { amount: 5000, date: '2026-08-01' };
+    await tools.create_invoicing_forecast.handler({ data });
+    expect(client.post).toHaveBeenCalledWith(BASE, data, 'v2');
+
+    await tools.update_invoicing_forecast.handler({ forecastId: 'f1', data });
+    expect(client.put).toHaveBeenCalledWith(`${BASE}/f1`, data, 'v2');
+
+    await tools.delete_invoicing_forecast.handler({ forecastId: 'f1' });
+    expect(client.delete).toHaveBeenCalledWith(`${BASE}/f1`, 'v2');
+  });
+});
