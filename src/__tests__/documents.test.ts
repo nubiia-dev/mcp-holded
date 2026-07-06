@@ -108,10 +108,10 @@ describe('Document Tools', () => {
       };
       await tools.create_document.handler(args);
       expect(client.post).toHaveBeenCalledWith('/invoices', {
-        contactId: 'contact-123',
-        items: [{ name: 'Item 1', units: 1, subtotal: 100 }],
-        date: 1700000000,
-        approveDoc: true,
+        contact_id: 'contact-123',
+        items: [{ name: 'Item 1', units: 1, price: 100 }],
+        date: '2023-11-14',
+        draft: false,
       });
     });
 
@@ -147,17 +147,18 @@ describe('Document Tools', () => {
       };
       await tools.create_document.handler(args);
       expect(client.post).toHaveBeenCalledWith('/invoices', {
-        contactId: 'contact-123',
+        contact_id: 'contact-123',
         items: [],
-        date: 1700000000,
+        date: '2023-11-14',
         notes: 'Test notes',
         currency: 'EUR',
-        approveDoc: true,
+        draft: false,
       });
     });
 
     it('should accept date as current Unix timestamp', async () => {
       const now = Math.floor(Date.now() / 1000);
+      const expectedDate = new Date(now * 1000).toISOString().slice(0, 10);
       const args = {
         docType: 'estimate' as const,
         contactId: 'contact-456',
@@ -166,10 +167,10 @@ describe('Document Tools', () => {
       };
       await tools.create_document.handler(args);
       expect(client.post).toHaveBeenCalledWith('/estimates', {
-        contactId: 'contact-456',
-        items: [{ name: 'Service', units: 1, subtotal: 200 }],
-        date: now,
-        approveDoc: true,
+        contact_id: 'contact-456',
+        items: [{ name: 'Service', units: 1, price: 200 }],
+        date: expectedDate,
+        draft: false,
       });
     });
 
@@ -188,10 +189,10 @@ describe('Document Tools', () => {
           date: 1700000000,
         });
         expect(client.post).toHaveBeenCalledWith(route, {
-          contactId: 'contact-123',
+          contact_id: 'contact-123',
           items: [],
-          date: 1700000000,
-          approveDoc: true,
+          date: '2023-11-14',
+          draft: false,
         });
       }
     });
@@ -209,6 +210,7 @@ describe('Document Tools', () => {
       it('should default approveDoc to true when omitted, finalizing the document', async () => {
         // Regression test for github issue #51: without approveDoc the Holded API
         // creates documents as drafts that are invisible in the UI.
+        // v2 uses `draft` (inverted): approveDoc:true → draft:false (approved/visible).
         await tools.create_document.handler({
           docType: 'invoice' as const,
           contactId: 'contact-123',
@@ -216,7 +218,8 @@ describe('Document Tools', () => {
           date: 1700000000,
         });
         const callBody = (client.post as any).mock.calls[0][1];
-        expect(callBody.approveDoc).toBe(true);
+        expect(callBody.draft).toBe(false);
+        expect(callBody).not.toHaveProperty('approveDoc');
       });
 
       it('should forward approveDoc:true explicitly', async () => {
@@ -228,7 +231,8 @@ describe('Document Tools', () => {
           approveDoc: true,
         });
         const callBody = (client.post as any).mock.calls[0][1];
-        expect(callBody.approveDoc).toBe(true);
+        expect(callBody.draft).toBe(false);
+        expect(callBody).not.toHaveProperty('approveDoc');
       });
 
       it('should forward approveDoc:false to intentionally create a draft', async () => {
@@ -240,7 +244,8 @@ describe('Document Tools', () => {
           approveDoc: false,
         });
         const callBody = (client.post as any).mock.calls[0][1];
-        expect(callBody.approveDoc).toBe(false);
+        expect(callBody.draft).toBe(true);
+        expect(callBody).not.toHaveProperty('approveDoc');
       });
 
       it('should reject approveDoc with a non-boolean value', async () => {
@@ -294,7 +299,7 @@ describe('Document Tools', () => {
       };
       await tools.update_document.handler(args);
       expect(client.put).toHaveBeenCalledWith('/invoices/doc-123', {
-        date: 1700086400,
+        date: '2023-11-15',
         notes: 'Revised notes',
       });
     });
@@ -658,7 +663,7 @@ describe('Document Tools', () => {
       expect(tools.update_document.inputSchema.properties).toHaveProperty('invoiceNum');
     });
 
-    it('should pass invoiceNum to the API on create', async () => {
+    it('should pass invoiceNum to the API on create (as `number` in v2 body)', async () => {
       await tools.create_document.handler({
         docType: 'purchase' as const,
         contactId: 'contact-123',
@@ -666,13 +671,12 @@ describe('Document Tools', () => {
         date: 1700000000,
         invoiceNum: 'PROV-2024-001',
       });
-      expect(client.post).toHaveBeenCalledWith('/purchases', {
-        contactId: 'contact-123',
-        items: [{ name: 'Part A', units: 2, subtotal: 50 }],
-        date: 1700000000,
-        invoiceNum: 'PROV-2024-001',
-        approveDoc: true,
-      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.number).toBe('PROV-2024-001');
+      expect(body.contact_id).toBe('contact-123');
+      expect(body.items).toEqual([{ name: 'Part A', units: 2, price: 50 }]);
+      expect(body.draft).toBe(false);
+      expect(body).not.toHaveProperty('invoiceNum');
     });
 
     it('should pass invoiceNum to the API on update', async () => {
@@ -754,10 +758,10 @@ describe('Document Tools', () => {
         date: 1700000000,
       });
       expect(client.post).toHaveBeenCalledWith('/invoices', {
-        contactId: 'contact-123',
-        items: [{ name: 'Service A', units: 1, subtotal: 200, taxes: ['holded-tax-123'] }],
-        date: 1700000000,
-        approveDoc: true,
+        contact_id: 'contact-123',
+        items: [{ name: 'Service A', units: 1, price: 200, taxes: ['holded-tax-123'] }],
+        date: '2023-11-14',
+        draft: false,
       });
     });
   });
@@ -771,7 +775,7 @@ describe('Document Tools', () => {
       expect(tools.update_document.inputSchema.properties).toHaveProperty('salesChannelId');
     });
 
-    it('should pass salesChannelId to the API on create', async () => {
+    it('should pass salesChannelId to the API on create (as `sales_channel_id` in v2 body)', async () => {
       await tools.create_document.handler({
         docType: 'invoice' as const,
         contactId: 'contact-123',
@@ -779,13 +783,11 @@ describe('Document Tools', () => {
         date: 1700000000,
         salesChannelId: 'channel-abc',
       });
-      expect(client.post).toHaveBeenCalledWith('/invoices', {
-        contactId: 'contact-123',
-        items: [{ name: 'Item', units: 1, subtotal: 100 }],
-        date: 1700000000,
-        salesChannelId: 'channel-abc',
-        approveDoc: true,
-      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.sales_channel_id).toBe('channel-abc');
+      expect(body.contact_id).toBe('contact-123');
+      expect(body.draft).toBe(false);
+      expect(body).not.toHaveProperty('salesChannelId');
     });
 
     it('should pass salesChannelId to the API on update', async () => {
@@ -806,7 +808,7 @@ describe('Document Tools', () => {
       expect(tools.update_document.inputSchema.properties).toHaveProperty('expAccountId');
     });
 
-    it('should pass expAccountId to the API on create', async () => {
+    it('should pass expAccountId to the API on create (cascades to line items as `account` in v2)', async () => {
       await tools.create_document.handler({
         docType: 'purchase' as const,
         contactId: 'contact-123',
@@ -814,13 +816,14 @@ describe('Document Tools', () => {
         date: 1700000000,
         expAccountId: 'exp-account-456',
       });
-      expect(client.post).toHaveBeenCalledWith('/purchases', {
-        contactId: 'contact-123',
-        items: [{ name: 'Office Supply', units: 1, subtotal: 50 }],
-        date: 1700000000,
-        expAccountId: 'exp-account-456',
-        approveDoc: true,
-      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.contact_id).toBe('contact-123');
+      expect(body.items).toEqual([
+        { name: 'Office Supply', units: 1, price: 50, account: 'exp-account-456' },
+      ]);
+      expect(body.draft).toBe(false);
+      // expAccountId must NOT appear as a root field in v2 body
+      expect(body).not.toHaveProperty('expAccountId');
     });
 
     it('should pass expAccountId to the API on update', async () => {
@@ -1149,7 +1152,7 @@ describe('Document Tools', () => {
       ).rejects.toThrow(/retention/i);
     });
 
-    it('#11 allows `retention` on a sales document and forwards it', async () => {
+    it('#11 allows `retention` on a sales document and forwards it per-line in v2', async () => {
       await tools.create_document.handler({
         docType: 'invoice' as const,
         contactId: 'contact-1',
@@ -1157,13 +1160,12 @@ describe('Document Tools', () => {
         date: 1700000000,
         retention: 15,
       } as any);
-      expect(client.post).toHaveBeenCalledWith('/invoices', {
-        contactId: 'contact-1',
-        items: [{ name: 'Service', units: 1, subtotal: 100 }],
-        date: 1700000000,
-        retention: 15,
-        approveDoc: true,
-      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.contact_id).toBe('contact-1');
+      expect(body.items).toEqual([{ name: 'Service', units: 1, price: 100, retention: 15 }]);
+      expect(body.draft).toBe(false);
+      // retention must NOT appear at root level in v2 (moved to per-line)
+      expect(body).not.toHaveProperty('retention');
     });
 
     it('#17 warns when a sales numbering series overrides the requested invoiceNum', async () => {
@@ -1311,6 +1313,147 @@ describe('Document Tools', () => {
         documentId: 'doc-1',
         paymentsDetail: [{ id: 'p1', amount: 100 }],
       });
+    });
+  });
+
+  describe('v2 snake_case body mapping (toV2DocumentBody / toV2DocumentItem)', () => {
+    it('create_document (purchase) posts contact_id, ISO date, number, draft:false, and mapped items', async () => {
+      await tools.create_document.handler({
+        docType: 'purchase' as const,
+        contactId: 'c-123',
+        items: [{ name: 'Part A', units: 2, subtotal: 50, desc: 'Some part', serviceId: 'svc-1' }],
+        date: 1700000000,
+        invoiceNum: 'PROV-001',
+        expAccountId: 'acc-obj-id',
+      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/purchases',
+        expect.objectContaining({
+          contact_id: 'c-123',
+          date: '2023-11-14',
+          number: 'PROV-001',
+          draft: false,
+          items: [
+            expect.objectContaining({
+              name: 'Part A',
+              units: 2,
+              price: 50,
+              description: 'Some part',
+              service_id: 'svc-1',
+              account: 'acc-obj-id',
+            }),
+          ],
+        })
+      );
+    });
+
+    it('approveDoc:false → draft:true in v2 body', async () => {
+      await tools.create_document.handler({
+        docType: 'purchase' as const,
+        contactId: 'c-1',
+        items: [],
+        date: 1700000000,
+        approveDoc: false,
+      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.draft).toBe(true);
+      expect(body).not.toHaveProperty('approveDoc');
+    });
+
+    it('approveDoc defaults to true when omitted → draft:false in v2 body', async () => {
+      await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'c-1',
+        items: [],
+        date: 1700000000,
+      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.draft).toBe(false);
+      expect(body).not.toHaveProperty('approveDoc');
+    });
+
+    it('update_document maps contactId→contact_id, date→ISO, invoiceNum→number, salesChannelId→sales_channel_id', async () => {
+      await tools.update_document.handler({
+        docType: 'purchase' as const,
+        documentId: 'doc-1',
+        contactId: 'c-456',
+        date: 1700000000,
+        invoiceNum: 'PROV-002',
+        salesChannelId: 'ch-1',
+      });
+      const body = (client.put as any).mock.calls[0][1];
+      expect(body.contact_id).toBe('c-456');
+      expect(body.date).toBe('2023-11-14');
+      expect(body.number).toBe('PROV-002');
+      expect(body.sales_channel_id).toBe('ch-1');
+      expect(body).not.toHaveProperty('contactId');
+      expect(body).not.toHaveProperty('invoiceNum');
+      expect(body).not.toHaveProperty('salesChannelId');
+      // update_document has no approveDoc → draft must NOT be emitted
+      expect(body).not.toHaveProperty('draft');
+    });
+
+    it('expAccountId cascades to EVERY line item as `account`, not in root body', async () => {
+      await tools.create_document.handler({
+        docType: 'purchase' as const,
+        contactId: 'c-1',
+        items: [
+          { name: 'A', units: 1, subtotal: 10 },
+          { name: 'B', units: 2, subtotal: 20 },
+        ],
+        date: 1700000000,
+        expAccountId: 'exp-obj-abc',
+      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.items[0].account).toBe('exp-obj-abc');
+      expect(body.items[1].account).toBe('exp-obj-abc');
+      expect(body).not.toHaveProperty('expAccountId');
+    });
+
+    it('camelCase tool fields are NOT leaked into the v2 body', async () => {
+      await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'c-1',
+        items: [{ name: 'X', units: 1, subtotal: 100 }],
+        date: 1700000000,
+        salesChannelId: 'ch-1',
+      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body).not.toHaveProperty('contactId');
+      expect(body).not.toHaveProperty('salesChannelId');
+      expect(body).not.toHaveProperty('approveDoc');
+    });
+
+    it('item mapping: subtotal→price, desc→description, serviceId→service_id, sku preserved', async () => {
+      await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'c-1',
+        items: [
+          {
+            name: 'Widget',
+            units: 3,
+            subtotal: 15,
+            desc: 'A widget',
+            serviceId: 'svc-99',
+            sku: 'WGT-001',
+            tax: 21,
+            discount: 5,
+          },
+        ],
+        date: 1700000000,
+      });
+      const body = (client.post as any).mock.calls[0][1];
+      const item = body.items[0];
+      expect(item.price).toBe(15);
+      expect(item.description).toBe('A widget');
+      expect(item.service_id).toBe('svc-99');
+      expect(item.sku).toBe('WGT-001');
+      expect(item.tax).toBe(21);
+      expect(item.discount).toBe(5);
+      // camelCase aliases must NOT leak through
+      expect(item).not.toHaveProperty('subtotal');
+      expect(item).not.toHaveProperty('desc');
+      expect(item).not.toHaveProperty('serviceId');
     });
   });
 

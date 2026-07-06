@@ -110,7 +110,23 @@ export class HoldedClient {
           return {} as T;
         }
 
-        return JSON.parse(text) as T;
+        const parsed = JSON.parse(text) as T;
+
+        // Holded returns HTTP 200 with {status:0, info:"..."} for permission-denied
+        // operations (e.g. DELETE on a locked contact). Treat these as errors so
+        // callers never silently assume success on a denied write.
+        if (
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          !Array.isArray(parsed) &&
+          (parsed as Record<string, unknown>).status === 0 &&
+          typeof (parsed as Record<string, unknown>).info === 'string'
+        ) {
+          const info = (parsed as Record<string, unknown>).info as string;
+          throw new Error(`Holded API error (200/denied): ${info}`);
+        }
+
+        return parsed;
       } catch (error) {
         // Network errors or other exceptions
         if (error instanceof Error) {

@@ -71,6 +71,95 @@ export type DocumentType =
   | 'purchaseorder';
 
 /**
+ * Map a tool line-item (camelCase tool args) to a v2 API line item (snake_case).
+ * Only the known fields listed below are forwarded; unknown/extra camelCase fields
+ * are silently omitted to avoid leaking stale v1 names into the v2 body.
+ *
+ * Mapping table:
+ *   name → name | units → units | subtotal → price (unit price) | desc → description
+ *   sku → sku | taxes → taxes | tax → tax | discount → discount | serviceId → service_id
+ */
+export function toV2DocumentItem(item: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (item.name !== undefined) out.name = item.name;
+  if (item.units !== undefined) out.units = item.units;
+  if (item.subtotal !== undefined) out.price = item.subtotal; // unit price
+  if (item.desc !== undefined) out.description = item.desc;
+  if (item.sku !== undefined) out.sku = item.sku;
+  if (item.taxes !== undefined) out.taxes = item.taxes;
+  if (item.tax !== undefined) out.tax = item.tax;
+  if (item.discount !== undefined) out.discount = item.discount;
+  if (item.serviceId !== undefined) out.service_id = item.serviceId;
+  return out;
+}
+
+/**
+ * Map the tool's camelCase write args to the Holded API v2 snake_case request body.
+ *
+ * Root field mapping (tool arg → v2 body field):
+ *   contactId      → contact_id
+ *   date           → date as ISO string YYYY-MM-DD (converted from Unix seconds)
+ *   invoiceNum     → number (persisted as document_number)
+ *   approveDoc     → draft (INVERTED: true → false, false → true; only emitted when present)
+ *   notes          → notes (as-is)
+ *   currency       → currency (as-is)
+ *   salesChannelId → sales_channel_id (best-effort snake_case; unverified live)
+ *   expAccountId   → NOT in root body; cascaded to every line item as `account` ObjectId
+ *   retention      → NOT in root body; cascaded to every line item as `retention` (best-effort)
+ *   items          → each item mapped via toV2DocumentItem
+ *
+ * Unknown/extra camelCase fields are omitted — they are NOT silently passed through.
+ * `approveDoc` is only emitted as `draft` when it is explicitly present in `args`
+ * (so update_document, which has no approveDoc in its schema, never adds `draft`).
+ */
+export function toV2DocumentBody(args: Record<string, unknown>): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+
+  if (args.contactId !== undefined) body.contact_id = args.contactId;
+
+  if (args.date !== undefined) {
+    // Convert Unix seconds to YYYY-MM-DD (UTC)
+    body.date = new Date((args.date as number) * 1000).toISOString().slice(0, 10);
+  }
+
+  if (args.invoiceNum !== undefined) body.number = args.invoiceNum;
+
+  // approveDoc → draft (inverted). Only include `draft` when approveDoc is explicitly provided.
+  // create_document always passes a defaulted value; update_document never passes it.
+  if (args.approveDoc !== undefined) {
+    body.draft = !(args.approveDoc as boolean);
+  }
+
+  if (args.notes !== undefined) body.notes = args.notes;
+  if (args.currency !== undefined) body.currency = args.currency;
+
+  // salesChannelId → sales_channel_id (best-effort; unverified live — see v2 mapping spec)
+  if (args.salesChannelId !== undefined) body.sales_channel_id = args.salesChannelId;
+
+  // Map line items if provided
+  if (args.items !== undefined) {
+    let items = (args.items as Array<Record<string, unknown>>).map(toV2DocumentItem);
+
+    // expAccountId cascades to every line as `account` (must be the ObjectId, not the account
+    // code like "62000000" — verified live: ObjectId persists, account code is rejected).
+    if (args.expAccountId !== undefined) {
+      items = items.map((item) =>
+        item.account !== undefined ? item : { ...item, account: args.expAccountId }
+      );
+    }
+
+    // retention → per-line (best-effort; v2 has no root retention field)
+    if (args.retention !== undefined) {
+      items = items.map((item) => ({ ...item, retention: args.retention }));
+    }
+
+    body.items = items;
+  }
+
+  return body;
+}
+
+/**
  * Attach non-fatal `_warnings` to a tool result without dropping the original
  * payload. Holded frequently returns `{status:1, "Updated"}` even when it
  * silently ignored a field, so write tools re-GET and surface discrepancies
@@ -334,14 +423,17 @@ export function getDocumentTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(createDocumentSchema, async (args) => {
         const { docType, approveDoc, ...rest } = args;
-        const body = { ...rest, approveDoc: approveDoc ?? true };
+        // Map camelCase tool args → v2 snake_case body. approveDoc is defaulted here so
+        // toV2DocumentBody always emits `draft` for creates (v2 defaults to draft mode).
+        const body = toV2DocumentBody({ ...rest, approveDoc: approveDoc ?? true });
         // purchaserefund has a dedicated v2 endpoint; all others use their resource base path.
         const postPath = docType === 'purchaserefund' ? '/purchases/refund' : docBase(docType);
         const result = (await client.post(postPath, body)) as Record<string, unknown>;
         const warnings: string[] = [];
         // #17 — on sales documents a numbering series may override the requested
-        // invoiceNum. Re-read the created document to confirm what actually stuck.
-        if (body.invoiceNum && !PURCHASE_DOC_TYPES.has(docType)) {
+        // invoiceNum (now mapped to `number` in the v2 body). Re-read the created
+        // document to confirm what actually stuck.
+        if (body.number && !PURCHASE_DOC_TYPES.has(docType)) {
           const newId = typeof result?.id === 'string' ? result.id : undefined;
           if (newId) {
             try {
@@ -355,9 +447,9 @@ export function getDocumentTools(client: HoldedClient) {
                 created?.invoice_num ??
                 created?.doc_number ??
                 created?.document_number;
-              if (persisted !== undefined && persisted !== body.invoiceNum) {
+              if (persisted !== undefined && persisted !== body.number) {
                 warnings.push(
-                  `Requested invoiceNum "${body.invoiceNum}" was overridden by the numbering series to "${String(persisted)}".`
+                  `Requested invoiceNum "${body.number}" was overridden by the numbering series to "${String(persisted)}".`
                 );
               }
             } catch {
@@ -554,7 +646,10 @@ export function getDocumentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(updateDocumentSchema, async (args) => {
-        const { docType, documentId, ...body } = args;
+        const { docType, documentId, ...rest } = args;
+        // Map camelCase tool args → v2 snake_case body. update_document has no `approveDoc`
+        // in its schema, so toV2DocumentBody will NOT emit `draft` for updates.
+        const body = toV2DocumentBody(rest);
         const result = (await client.put(`${docBase(docType)}/${documentId}`, body)) as Record<
           string,
           unknown

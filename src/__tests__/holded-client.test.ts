@@ -272,6 +272,43 @@ describe('HoldedClient', () => {
     });
   });
 
+  describe('200-with-error body detection', () => {
+    it('throws when HTTP 200 body is {status:0, info:"..."} (permission denied)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({ status: 0, info: 'Insuficient access' }),
+      });
+      await expect(client.delete('/contacts/123')).rejects.toThrow(/Insuficient access|denied/);
+    });
+
+    it('throws matching the exact info string from the body', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({ status: 0, info: 'No permission for this resource' }),
+      });
+      await expect(client.post('/purchases', {})).rejects.toThrow(/No permission/);
+    });
+
+    it('does NOT throw on HTTP 200 with a normal success body (status:1)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({ status: 1, info: 'Created' }),
+      });
+      await expect(client.post('/purchases', {})).resolves.toEqual({ status: 1, info: 'Created' });
+    });
+
+    it('does NOT throw on HTTP 200 body without status+info pattern', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({ id: 'doc-123', total: '100,00' }),
+      });
+      await expect(client.get('/invoices/doc-123')).resolves.toEqual({
+        id: 'doc-123',
+        total: '100,00',
+      });
+    });
+  });
+
   describe('retry logic', () => {
     it('should retry on 429 and eventually succeed', async () => {
       mockFetch
