@@ -43,3 +43,50 @@ describe('Team Tools — employees', () => {
     expect(client.delete).toHaveBeenCalledWith('/employees/abc', 'v2');
   });
 });
+
+describe('Team Tools — time tracking', () => {
+  let client: ReturnType<typeof createMockClient>;
+  let tools: ReturnType<typeof getTeamTools>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client = createMockClient();
+    tools = getTeamTools(client);
+  });
+
+  it('clock_in_employee posts to the clock-in action', async () => {
+    await tools.clock_in_employee.handler({ employeeId: 'e1' });
+    expect(client.post).toHaveBeenCalledWith('/employees/e1/clock-in', undefined, 'v2');
+  });
+
+  it('clock_out_employee posts to the clock-out action', async () => {
+    await tools.clock_out_employee.handler({ employeeId: 'e1' });
+    expect(client.post).toHaveBeenCalledWith('/employees/e1/clock-out', undefined, 'v2');
+  });
+
+  it('list_employee_times lists globally by default', async () => {
+    (client.get as any).mockResolvedValue([]);
+    await tools.list_employee_times.handler({});
+    expect(client.get).toHaveBeenCalledWith('/employee-times', {}, 'v2');
+  });
+
+  it('list_employee_times scopes to one employee when employeeId is given', async () => {
+    (client.get as any).mockResolvedValue([]);
+    await tools.list_employee_times.handler({ employeeId: 'e1', limit: 5 });
+    expect(client.get).toHaveBeenCalledWith('/employees/e1/times', { limit: 5 }, 'v2');
+  });
+
+  it('create_employee_time posts the record under the employee', async () => {
+    const data = { start: '2026-07-01T09:00:00Z', end: '2026-07-01T17:00:00Z' };
+    await tools.create_employee_time.handler({ employeeId: 'e1', data });
+    expect(client.post).toHaveBeenCalledWith('/employees/e1/times', data, 'v2');
+  });
+
+  it('update/delete_employee_time address the time record directly', async () => {
+    await tools.update_employee_time.handler({ timeId: 't1', data: { note: 'x' } });
+    expect(client.put).toHaveBeenCalledWith('/employee-times/t1', { note: 'x' }, 'v2');
+
+    await tools.delete_employee_time.handler({ timeId: 't1' });
+    expect(client.delete).toHaveBeenCalledWith('/employee-times/t1', 'v2');
+  });
+});
