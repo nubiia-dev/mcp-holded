@@ -29,68 +29,74 @@ describe('Document Tools', () => {
   });
 
   describe('list_documents', () => {
-    it('should list documents of a specific type', async () => {
+    it('lists invoice documents via v2 route', async () => {
       await tools.list_documents.handler({ docType: 'invoice' });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice', {});
+      expect(client.get).toHaveBeenCalledWith('/invoices', {}, 'v2');
     });
 
-    it('should support pagination with page parameter', async () => {
-      await tools.list_documents.handler({ docType: 'invoice', page: 2 });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice', { page: 2 });
+    it('lists purchase documents via v2 route', async () => {
+      await tools.list_documents.handler({ docType: 'purchase' });
+      expect(client.get).toHaveBeenCalledWith('/purchases', {}, 'v2');
     });
 
-    it('should handle requests with only docType', async () => {
-      await tools.list_documents.handler({ docType: 'invoice' });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice', {});
+    it('lists receiptnote documents via v2 route', async () => {
+      await tools.list_documents.handler({ docType: 'receiptnote' });
+      expect(client.get).toHaveBeenCalledWith('/receipt-notes', {}, 'v2');
     });
 
-    it('should support limit parameter for virtual pagination', async () => {
+    it('forwards cursor param to v2', async () => {
+      await tools.list_documents.handler({ docType: 'invoice', cursor: 'page:2' });
+      expect(client.get).toHaveBeenCalledWith('/invoices', { cursor: 'page:2' }, 'v2');
+    });
+
+    it('forwards limit param to v2', async () => {
       await tools.list_documents.handler({ docType: 'invoice', limit: 20 });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice', { limit: 20 });
+      expect(client.get).toHaveBeenCalledWith('/invoices', { limit: 20 }, 'v2');
     });
 
-    it('should support summary mode', async () => {
-      await tools.list_documents.handler({ docType: 'invoice', summary: true });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice', {});
+    it('returns normalised v2 envelope', async () => {
+      client.get = vi.fn().mockResolvedValue({ items: [{ id: 'doc-1' }], has_more: false });
+      const result = (await tools.list_documents.handler({ docType: 'invoice' })) as any;
+      expect(result.items).toBeDefined();
+      expect(result.items[0].id).toBe('doc-1');
+      expect(result.hasMore).toBe(false);
     });
 
-    it('should work with different document types', async () => {
+    it('returns summary with count when summary=true', async () => {
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: [{ id: 'd1' }, { id: 'd2' }], has_more: true, cursor: 'page:2' });
+      const result = (await tools.list_documents.handler({ docType: 'invoice', summary: true })) as any;
+      expect(result.count).toBe(2);
+      expect(result.items).toBeUndefined();
+    });
+
+    it('supports fields filtering', async () => {
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: [{ id: 'doc-1', total: '100,00', extra: 'drop' }] });
+      const result = (await tools.list_documents.handler({
+        docType: 'invoice',
+        fields: ['id', 'total'],
+      })) as any;
+      expect(result.items[0]).toEqual({ id: 'doc-1', total: '100,00' });
+      expect(result.items[0].extra).toBeUndefined();
+    });
+
+    it('works with estimate doc type', async () => {
       await tools.list_documents.handler({ docType: 'estimate' });
-      expect(client.get).toHaveBeenCalledWith('/documents/estimate', {});
+      expect(client.get).toHaveBeenCalledWith('/estimates', {}, 'v2');
     });
 
-    it('should support combining pagination parameters', async () => {
-      await tools.list_documents.handler({
-        docType: 'salesorder',
-        page: 3,
-      });
-      expect(client.get).toHaveBeenCalledWith('/documents/salesorder', { page: 3 });
+    it('works with salesorder doc type', async () => {
+      await tools.list_documents.handler({ docType: 'salesorder' });
+      expect(client.get).toHaveBeenCalledWith('/sales-orders', {}, 'v2');
     });
 
-    it('should support summary mode with pagination', async () => {
-      await tools.list_documents.handler({
-        docType: 'invoice',
-        page: 1,
-        summary: true,
-      });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice', { page: 1 });
-    });
-
-    it('should handle all document types correctly', async () => {
-      const docTypes = ['invoice', 'estimate', 'salesorder', 'purchaseorder', 'waybill'];
-      for (const docType of docTypes) {
-        await tools.list_documents.handler({ docType: docType as any });
-        expect(client.get).toHaveBeenCalledWith(`/documents/${docType}`, {});
-      }
-    });
-
-    it('should support limit without pagination for virtual pagination', async () => {
-      await tools.list_documents.handler({
-        docType: 'invoice',
-        limit: 5,
-        summary: false,
-      });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice', { limit: 5 });
+    it('rejects purchaserefund (list not supported in v2)', async () => {
+      await expect(tools.list_documents.handler({ docType: 'purchaserefund' })).rejects.toThrow(
+        /Only creation is supported/
+      );
     });
   });
 
@@ -103,12 +109,16 @@ describe('Document Tools', () => {
         date: 1700000000,
       };
       await tools.create_document.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice', {
-        contactId: 'contact-123',
-        items: [{ name: 'Item 1', units: 1, subtotal: 100 }],
-        date: 1700000000,
-        approveDoc: true,
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/invoices',
+        {
+          contactId: 'contact-123',
+          items: [{ name: 'Item 1', units: 1, subtotal: 100 }],
+          date: 1700000000,
+          approveDoc: true,
+        },
+        'v2'
+      );
     });
 
     it('should reject date as string (must be Unix timestamp integer)', async () => {
@@ -142,14 +152,18 @@ describe('Document Tools', () => {
         currency: 'EUR',
       };
       await tools.create_document.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice', {
-        contactId: 'contact-123',
-        items: [],
-        date: 1700000000,
-        notes: 'Test notes',
-        currency: 'EUR',
-        approveDoc: true,
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/invoices',
+        {
+          contactId: 'contact-123',
+          items: [],
+          date: 1700000000,
+          notes: 'Test notes',
+          currency: 'EUR',
+          approveDoc: true,
+        },
+        'v2'
+      );
     });
 
     it('should accept date as current Unix timestamp', async () => {
@@ -161,36 +175,53 @@ describe('Document Tools', () => {
         date: now,
       };
       await tools.create_document.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/estimate', {
-        contactId: 'contact-456',
-        items: [{ name: 'Service', units: 1, subtotal: 200 }],
-        date: now,
-        approveDoc: true,
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/estimates',
+        {
+          contactId: 'contact-456',
+          items: [{ name: 'Service', units: 1, subtotal: 200 }],
+          date: now,
+          approveDoc: true,
+        },
+        'v2'
+      );
     });
 
-    it('should accept extended docTypes: salesreceipt, creditnote, receiptnote, purchaserefund', async () => {
-      const extendedTypes = [
-        'salesreceipt',
-        'creditnote',
-        'receiptnote',
-        'purchaserefund',
+    it('should accept extended docTypes: salesreceipt, creditnote, receiptnote via v2 routes', async () => {
+      const cases = [
+        { docType: 'salesreceipt' as const, route: '/sales-receipts' },
+        { docType: 'creditnote' as const, route: '/credit-notes' },
+        { docType: 'receiptnote' as const, route: '/receipt-notes' },
       ] as const;
-      for (const docType of extendedTypes) {
-        const args = {
+      for (const { docType, route } of cases) {
+        vi.clearAllMocks();
+        await tools.create_document.handler({
           docType,
           contactId: 'contact-123',
           items: [],
           date: 1700000000,
-        };
-        await tools.create_document.handler(args);
-        expect(client.post).toHaveBeenCalledWith(`/documents/${docType}`, {
-          contactId: 'contact-123',
-          items: [],
-          date: 1700000000,
-          approveDoc: true,
         });
+        expect(client.post).toHaveBeenCalledWith(
+          route,
+          {
+            contactId: 'contact-123',
+            items: [],
+            date: 1700000000,
+            approveDoc: true,
+          },
+          'v2'
+        );
       }
+    });
+
+    it('creates purchaserefund via the dedicated v2 route', async () => {
+      await tools.create_document.handler({
+        docType: 'purchaserefund',
+        contactId: 'c1',
+        items: [],
+        date: 1700000000,
+      });
+      expect(client.post).toHaveBeenCalledWith('/purchases/refund', expect.anything(), 'v2');
     });
 
     describe('approveDoc parameter', () => {
@@ -252,9 +283,15 @@ describe('Document Tools', () => {
   });
 
   describe('get_document', () => {
-    it('should get a document by ID', async () => {
+    it('gets an invoice via v2 route', async () => {
       await tools.get_document.handler({ docType: 'invoice', documentId: 'doc-123' });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice/doc-123');
+      expect(client.get).toHaveBeenCalledWith('/invoices/doc-123', undefined, 'v2');
+    });
+
+    it('rejects non-create operations on purchaserefund with a clear v2 error', async () => {
+      await expect(
+        tools.get_document.handler({ docType: 'purchaserefund', documentId: 'x' })
+      ).rejects.toThrow(/Only creation is supported/);
     });
   });
 
@@ -266,9 +303,7 @@ describe('Document Tools', () => {
         notes: 'Updated notes',
       };
       await tools.update_document.handler(args);
-      expect(client.put).toHaveBeenCalledWith('/documents/invoice/doc-123', {
-        notes: 'Updated notes',
-      });
+      expect(client.put).toHaveBeenCalledWith('/invoices/doc-123', { notes: 'Updated notes' }, 'v2');
     });
 
     it('should accept date as Unix timestamp integer when updating', async () => {
@@ -279,10 +314,11 @@ describe('Document Tools', () => {
         notes: 'Revised notes',
       };
       await tools.update_document.handler(args);
-      expect(client.put).toHaveBeenCalledWith('/documents/invoice/doc-123', {
-        date: 1700086400,
-        notes: 'Revised notes',
-      });
+      expect(client.put).toHaveBeenCalledWith(
+        '/invoices/doc-123',
+        { date: 1700086400, notes: 'Revised notes' },
+        'v2'
+      );
     });
 
     it('should reject date as string when updating', async () => {
@@ -302,9 +338,7 @@ describe('Document Tools', () => {
         currency: 'USD',
       };
       await tools.update_document.handler(args);
-      expect(client.put).toHaveBeenCalledWith('/documents/invoice/doc-123', {
-        currency: 'USD',
-      });
+      expect(client.put).toHaveBeenCalledWith('/invoices/doc-123', { currency: 'USD' }, 'v2');
     });
 
     it('inputSchema should include currency field in update_document', () => {
@@ -315,7 +349,7 @@ describe('Document Tools', () => {
   describe('delete_document', () => {
     it('should delete a document', async () => {
       await tools.delete_document.handler({ docType: 'invoice', documentId: 'doc-123' });
-      expect(client.delete).toHaveBeenCalledWith('/documents/invoice/doc-123');
+      expect(client.delete).toHaveBeenCalledWith('/invoices/doc-123', 'v2');
     });
   });
 
@@ -501,13 +535,17 @@ describe('Document Tools', () => {
         date: 1700000000,
         invoiceNum: 'PROV-2024-001',
       });
-      expect(client.post).toHaveBeenCalledWith('/documents/purchase', {
-        contactId: 'contact-123',
-        items: [{ name: 'Part A', units: 2, subtotal: 50 }],
-        date: 1700000000,
-        invoiceNum: 'PROV-2024-001',
-        approveDoc: true,
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/purchases',
+        {
+          contactId: 'contact-123',
+          items: [{ name: 'Part A', units: 2, subtotal: 50 }],
+          date: 1700000000,
+          invoiceNum: 'PROV-2024-001',
+          approveDoc: true,
+        },
+        'v2'
+      );
     });
 
     it('should pass invoiceNum to the API on update', async () => {
@@ -516,9 +554,7 @@ describe('Document Tools', () => {
         documentId: 'doc-123',
         invoiceNum: 'INV-2024-007',
       });
-      expect(client.put).toHaveBeenCalledWith('/documents/invoice/doc-123', {
-        invoiceNum: 'INV-2024-007',
-      });
+      expect(client.put).toHaveBeenCalledWith('/invoices/doc-123', { invoiceNum: 'INV-2024-007' }, 'v2');
     });
 
     it('should not require invoiceNum (optional field)', async () => {
@@ -591,12 +627,16 @@ describe('Document Tools', () => {
         items: [{ name: 'Service A', units: 1, subtotal: 200, taxes: ['holded-tax-123'] }],
         date: 1700000000,
       });
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice', {
-        contactId: 'contact-123',
-        items: [{ name: 'Service A', units: 1, subtotal: 200, taxes: ['holded-tax-123'] }],
-        date: 1700000000,
-        approveDoc: true,
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/invoices',
+        {
+          contactId: 'contact-123',
+          items: [{ name: 'Service A', units: 1, subtotal: 200, taxes: ['holded-tax-123'] }],
+          date: 1700000000,
+          approveDoc: true,
+        },
+        'v2'
+      );
     });
   });
 
@@ -617,13 +657,17 @@ describe('Document Tools', () => {
         date: 1700000000,
         salesChannelId: 'channel-abc',
       });
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice', {
-        contactId: 'contact-123',
-        items: [{ name: 'Item', units: 1, subtotal: 100 }],
-        date: 1700000000,
-        salesChannelId: 'channel-abc',
-        approveDoc: true,
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/invoices',
+        {
+          contactId: 'contact-123',
+          items: [{ name: 'Item', units: 1, subtotal: 100 }],
+          date: 1700000000,
+          salesChannelId: 'channel-abc',
+          approveDoc: true,
+        },
+        'v2'
+      );
     });
 
     it('should pass salesChannelId to the API on update', async () => {
@@ -632,9 +676,7 @@ describe('Document Tools', () => {
         documentId: 'doc-123',
         salesChannelId: 'channel-xyz',
       });
-      expect(client.put).toHaveBeenCalledWith('/documents/invoice/doc-123', {
-        salesChannelId: 'channel-xyz',
-      });
+      expect(client.put).toHaveBeenCalledWith('/invoices/doc-123', { salesChannelId: 'channel-xyz' }, 'v2');
     });
   });
 
@@ -655,13 +697,17 @@ describe('Document Tools', () => {
         date: 1700000000,
         expAccountId: 'exp-account-456',
       });
-      expect(client.post).toHaveBeenCalledWith('/documents/purchase', {
-        contactId: 'contact-123',
-        items: [{ name: 'Office Supply', units: 1, subtotal: 50 }],
-        date: 1700000000,
-        expAccountId: 'exp-account-456',
-        approveDoc: true,
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/purchases',
+        {
+          contactId: 'contact-123',
+          items: [{ name: 'Office Supply', units: 1, subtotal: 50 }],
+          date: 1700000000,
+          expAccountId: 'exp-account-456',
+          approveDoc: true,
+        },
+        'v2'
+      );
     });
 
     it('should pass expAccountId to the API on update', async () => {
@@ -670,9 +716,7 @@ describe('Document Tools', () => {
         documentId: 'doc-456',
         expAccountId: 'exp-account-789',
       });
-      expect(client.put).toHaveBeenCalledWith('/documents/purchase/doc-456', {
-        expAccountId: 'exp-account-789',
-      });
+      expect(client.put).toHaveBeenCalledWith('/purchases/doc-456', { expAccountId: 'exp-account-789' }, 'v2');
     });
   });
 
@@ -1001,13 +1045,17 @@ describe('Document Tools', () => {
         date: 1700000000,
         retention: 15,
       } as any);
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice', {
-        contactId: 'contact-1',
-        items: [{ name: 'Service', units: 1, subtotal: 100 }],
-        date: 1700000000,
-        retention: 15,
-        approveDoc: true,
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/invoices',
+        {
+          contactId: 'contact-1',
+          items: [{ name: 'Service', units: 1, subtotal: 100 }],
+          date: 1700000000,
+          retention: 15,
+          approveDoc: true,
+        },
+        'v2'
+      );
     });
 
     it('#17 warns when a sales numbering series overrides the requested invoiceNum', async () => {
@@ -1020,7 +1068,7 @@ describe('Document Tools', () => {
         date: 1700000000,
         invoiceNum: 'CUSTOM-1',
       })) as any;
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice/doc-new');
+      expect(client.get).toHaveBeenCalledWith('/invoices/doc-new', undefined, 'v2');
       expect(result._warnings).toBeDefined();
       expect(result._warnings[0]).toMatch(/overridden/);
     });
@@ -1047,6 +1095,8 @@ describe('Document Tools', () => {
         documentId: 'doc-1',
         currency: 'USD',
       })) as any;
+      expect(client.put).toHaveBeenCalledWith('/invoices/doc-1', { currency: 'USD' }, 'v2');
+      expect(client.get).toHaveBeenCalledWith('/invoices/doc-1', undefined, 'v2');
       expect(result._warnings).toBeDefined();
       expect(result._warnings[0]).toMatch(/currency/i);
     });
@@ -1076,18 +1126,13 @@ describe('Document Tools', () => {
       expect(result._warnings.some((w: string) => /Linked bank account bank-9/.test(w))).toBe(true);
     });
 
-    it('#16 maps the approved filter to Holded `filter=approved-<n>`', async () => {
-      await tools.list_documents.handler({ docType: 'invoice', approved: '0' });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice', { filter: 'approved-0' });
-    });
-
     it('#14 get_document_payments returns the document paymentsDetail', async () => {
       client.get = vi.fn().mockResolvedValue({ paymentsDetail: [{ id: 'p1', amount: 100 }] });
       const result = (await tools.get_document_payments.handler({
         docType: 'invoice' as const,
         documentId: 'doc-1',
       })) as any;
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice/doc-1');
+      expect(client.get).toHaveBeenCalledWith('/invoices/doc-1', undefined, 'v2');
       expect(result).toEqual({
         documentId: 'doc-1',
         paymentsDetail: [{ id: 'p1', amount: 100 }],
@@ -1095,126 +1140,47 @@ describe('Document Tools', () => {
     });
   });
 
-  describe('Virtual pagination', () => {
-    it('should return first page of results with page=1', async () => {
-      // Mock 100 documents
-      const mockDocuments = Array.from({ length: 100 }, (_, i) => ({
-        id: `doc-${i + 1}`,
-        contact: `contact-${i + 1}`,
-        contactName: `Contact ${i + 1}`,
-        date: 1700000000 + i * 86400,
-        tax: 21,
-        total: (i + 1) * 100,
-        status: 1,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockDocuments);
-
-      const result = (await tools.list_documents.handler({
-        docType: 'invoice',
-        page: 1,
-        limit: 10,
-      })) as any;
-
-      expect(result.items).toHaveLength(10);
-      expect(result.items[0].id).toBe('doc-1');
-      expect(result.items[9].id).toBe('doc-10');
-      expect(result.page).toBe(1);
-      expect(result.totalItems).toBe(100);
-      expect(result.totalPages).toBe(10);
+  describe('v2 cursor pagination', () => {
+    it('returns normalised envelope with items and hasMore from v2', async () => {
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: [{ id: 'doc-1' }], has_more: true, cursor: 'page:2' });
+      const result = (await tools.list_documents.handler({ docType: 'invoice' })) as any;
+      expect(result.items).toHaveLength(1);
       expect(result.hasMore).toBe(true);
+      expect(result.nextCursor).toBe('page:2');
     });
 
-    it('should return second page of results with page=2', async () => {
-      const mockDocuments = Array.from({ length: 100 }, (_, i) => ({
-        id: `doc-${i + 1}`,
-        contact: `contact-${i + 1}`,
-        contactName: `Contact ${i + 1}`,
-        date: 1700000000 + i * 86400,
-        tax: 21,
-        total: (i + 1) * 100,
-        status: 1,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockDocuments);
-
-      const result = (await tools.list_documents.handler({
-        docType: 'invoice',
-        page: 2,
-        limit: 10,
-      })) as any;
-
-      expect(result.items).toHaveLength(10);
-      expect(result.items[0].id).toBe('doc-11');
-      expect(result.items[9].id).toBe('doc-20');
-      expect(result.page).toBe(2);
-      expect(result.hasMore).toBe(true);
-    });
-
-    it('should return last page with hasMore=false', async () => {
-      const mockDocuments = Array.from({ length: 25 }, (_, i) => ({
-        id: `doc-${i + 1}`,
-        contact: `contact-${i + 1}`,
-        contactName: `Contact ${i + 1}`,
-        date: 1700000000 + i * 86400,
-        tax: 21,
-        total: (i + 1) * 100,
-        status: 1,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockDocuments);
-
-      const result = (await tools.list_documents.handler({
-        docType: 'invoice',
-        page: 3,
-        limit: 10,
-      })) as any;
-
-      expect(result.items).toHaveLength(5);
-      expect(result.items[0].id).toBe('doc-21');
-      expect(result.items[4].id).toBe('doc-25');
+    it('returns empty items when no documents', async () => {
+      client.get = vi.fn().mockResolvedValue({ items: [], has_more: false });
+      const result = (await tools.list_documents.handler({ docType: 'invoice' })) as any;
+      expect(result.items).toHaveLength(0);
       expect(result.hasMore).toBe(false);
     });
 
-    it('should return summary with pagination metadata', async () => {
-      const mockDocuments = Array.from({ length: 75 }, (_, i) => ({
-        id: `doc-${i + 1}`,
-        contact: `contact-${i + 1}`,
-        contactName: `Contact ${i + 1}`,
-        date: 1700000000 + i * 86400,
-        tax: 21,
-        total: (i + 1) * 100,
-        status: 1,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockDocuments);
-
-      const result = (await tools.list_documents.handler({
-        docType: 'invoice',
-        page: 2,
-        limit: 20,
-        summary: true,
-      })) as any;
-
-      expect(result.count).toBe(75);
-      expect(result.totalPages).toBe(4);
-      expect(result.currentPage).toBe(2);
-      expect(result.hasMore).toBe(true);
+    it('forwards cursor in subsequent requests', async () => {
+      await tools.list_documents.handler({ docType: 'invoice', cursor: 'page:3' });
+      expect(client.get).toHaveBeenCalledWith('/invoices', { cursor: 'page:3' }, 'v2');
     });
 
-    it('should default to page 1 when page is not specified', async () => {
-      const mockDocuments = Array.from({ length: 30 }, (_, i) => ({
-        id: `doc-${i + 1}`,
-        contact: `contact-${i + 1}`,
-        contactName: `Contact ${i + 1}`,
-        date: 1700000000 + i * 86400,
-        tax: 21,
-        total: (i + 1) * 100,
-        status: 1,
-      }));
-      client.get = vi.fn().mockResolvedValue(mockDocuments);
+    it('summary mode returns count and nextCursor without items', async () => {
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: [{ id: 'a' }, { id: 'b' }], has_more: true, cursor: 'page:2' });
+      const result = (await tools.list_documents.handler({
+        docType: 'invoice',
+        summary: true,
+      })) as any;
+      expect(result.count).toBe(2);
+      expect(result.nextCursor).toBe('page:2');
+      expect(result.hasMore).toBe(true);
+      expect(result.items).toBeUndefined();
+    });
 
-      const result = (await tools.list_documents.handler({ docType: 'invoice', limit: 10 })) as any;
-
-      expect(result.items).toHaveLength(10);
-      expect(result.items[0].id).toBe('doc-1');
-      expect(result.page).toBe(1);
+    it('normalises bare-array response from v2', async () => {
+      client.get = vi.fn().mockResolvedValue([{ id: 'doc-1' }, { id: 'doc-2' }]);
+      const result = (await tools.list_documents.handler({ docType: 'invoice' })) as any;
+      expect(result.items).toHaveLength(2);
     });
   });
 });
