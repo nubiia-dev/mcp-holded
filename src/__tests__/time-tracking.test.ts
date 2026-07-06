@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createMockClient } from './mock-client.js';
 import { getTimeTrackingTools, unixToLocalISODate } from '../tools/time-tracking.js';
 
-// Unix timestamp for local midnight on 2026-06-02 in the test host's timezone.
+// Unix timestamp for local midnight on the given calendar day in the test host's timezone.
 function localMidnightUnix(year: number, month: number, day: number): number {
   return Math.floor(new Date(year, month - 1, day).getTime() / 1000);
 }
 
-describe('Time Tracking Tools', () => {
+describe('Time Tracking Tools (v2)', () => {
   let client: ReturnType<typeof createMockClient>;
   let tools: ReturnType<typeof getTimeTrackingTools>;
 
@@ -15,17 +15,15 @@ describe('Time Tracking Tools', () => {
   const day2 = localMidnightUnix(2026, 6, 2);
   const day3 = localMidnightUnix(2026, 6, 3);
 
-  const sampleProjects = [
-    {
-      id: 'project-1',
-      name: 'SAP',
-      timeTracking: [
-        { timeId: 't1', duration: 28800, date: day1, approved: 1 },
-        { timeId: 't2', duration: 28800, date: day2, approved: 0 },
-        { timeId: 't3', duration: 9000, date: day3, approved: 1 },
-      ],
-    },
+  /** Flat v2 time entries (no nested project structure). */
+  const flatItems = [
+    { timeId: 't1', duration: 28800, date: day1, approved: 1, projectId: 'project-1', projectName: 'SAP' },
+    { timeId: 't2', duration: 28800, date: day2, approved: 0, projectId: 'project-1', projectName: 'SAP' },
+    { timeId: 't3', duration: 9000, date: day3, approved: 1, projectId: 'project-1', projectName: 'SAP' },
   ];
+
+  /** Simulate a v2 envelope with cursor. */
+  const v2Page = { items: flatItems, cursor: 'page:2' };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -34,74 +32,75 @@ describe('Time Tracking Tools', () => {
   });
 
   describe('list_project_times', () => {
-    it('targets the projects API base, not invoicing', async () => {
+    it('calls /project-times on the v2 API base', async () => {
       await tools.list_project_times.handler({});
-      expect(client.get).toHaveBeenCalledWith('/projects/times', undefined, 'projects');
+      expect(client.get).toHaveBeenCalledWith('/project-times', {}, 'v2');
     });
 
-    it('returns the nested per-project structure unchanged when no filters given', async () => {
-      vi.mocked(client.get).mockResolvedValueOnce(sampleProjects);
-      const result = (await tools.list_project_times.handler({})) as typeof sampleProjects;
-      expect(result[0].timeTracking).toHaveLength(3);
+    it('passes limit and cursor as query params', async () => {
+      await tools.list_project_times.handler({ limit: 10, cursor: 'page:3' });
+      expect(client.get).toHaveBeenCalledWith('/project-times', { limit: 10, cursor: 'page:3' }, 'v2');
     });
 
-    it('keeps only approved entries when approvedOnly is set', async () => {
-      vi.mocked(client.get).mockResolvedValueOnce(sampleProjects);
-      const result = (await tools.list_project_times.handler({
-        approvedOnly: true,
-      })) as typeof sampleProjects;
-      expect(result[0].timeTracking.map((e) => e.timeId)).toEqual(['t1', 't3']);
+    it('returns a normalizeV2List envelope with items and nextCursor', async () => {
+      vi.mocked(client.get).mockResolvedValueOnce(v2Page);
+      const result = await tools.list_project_times.handler({});
+      expect(Array.isArray(result.items)).toBe(true);
+      expect(result.items).toHaveLength(3);
+      expect(result.nextCursor).toBe('page:2');
     });
 
-    it('filters by inclusive date range', async () => {
-      vi.mocked(client.get).mockResolvedValueOnce(sampleProjects);
-      const result = (await tools.list_project_times.handler({
+    it('filters approved-only client-side on the returned page', async () => {
+      vi.mocked(client.get).mockResolvedValueOnce(v2Page);
+      const result = await tools.list_project_times.handler({ approvedOnly: true });
+      const ids = (result.items as Array<{ timeId: string }>).map((e) => e.timeId);
+      expect(ids).toEqual(['t1', 't3']);
+    });
+
+    it('filters by inclusive date range client-side on the returned page', async () => {
+      vi.mocked(client.get).mockResolvedValueOnce(v2Page);
+      const result = await tools.list_project_times.handler({
         startDate: '2026-06-02',
         endDate: '2026-06-02',
-      })) as typeof sampleProjects;
-      expect(result[0].timeTracking.map((e) => e.timeId)).toEqual(['t2']);
+      });
+      const ids = (result.items as Array<{ timeId: string }>).map((e) => e.timeId);
+      expect(ids).toEqual(['t2']);
     });
 
-    it('flattens entries and computes hours', async () => {
-      vi.mocked(client.get).mockResolvedValueOnce(sampleProjects);
-      const result = (await tools.list_project_times.handler({
-        flatten: true,
-        approvedOnly: true,
-      })) as Array<{ timeId: string; hours: number; projectName: string }>;
-      expect(result).toHaveLength(2);
-      expect(result[0]).toMatchObject({ timeId: 't1', hours: 8, projectName: 'SAP' });
-      expect(result[1]).toMatchObject({ timeId: 't3', hours: 2.5 });
-    });
   });
 
   describe('list_project_times_by_project', () => {
-    it('requests the project-scoped endpoint on the projects API', async () => {
-      vi.mocked(client.get).mockResolvedValueOnce(sampleProjects[0]);
+    it('calls /projects/{id}/times on the v2 API base', async () => {
+      vi.mocked(client.get).mockResolvedValueOnce({ items: [] });
       await tools.list_project_times_by_project.handler({ projectId: 'project-1' });
-      expect(client.get).toHaveBeenCalledWith('/projects/project-1/times', undefined, 'projects');
+      expect(client.get).toHaveBeenCalledWith('/projects/project-1/times', {}, 'v2');
     });
 
-    it('applies filters to a single project response', async () => {
-      vi.mocked(client.get).mockResolvedValueOnce(sampleProjects[0]);
-      const result = (await tools.list_project_times_by_project.handler({
+    it('passes limit and cursor as query params', async () => {
+      vi.mocked(client.get).mockResolvedValueOnce({ items: [] });
+      await tools.list_project_times_by_project.handler({
+        projectId: 'project-1',
+        limit: 5,
+        cursor: 'abc',
+      });
+      expect(client.get).toHaveBeenCalledWith('/projects/project-1/times', { limit: 5, cursor: 'abc' }, 'v2');
+    });
+
+    it('returns normalized v2 list and applies approvedOnly client-side', async () => {
+      vi.mocked(client.get).mockResolvedValueOnce(v2Page);
+      const result = await tools.list_project_times_by_project.handler({
         projectId: 'project-1',
         approvedOnly: true,
-      })) as Array<{ timeTracking: Array<{ timeId: string }> }>;
-      expect(result[0].timeTracking.map((e) => e.timeId)).toEqual(['t1', 't3']);
+      });
+      const ids = (result.items as Array<{ timeId: string }>).map((e) => e.timeId);
+      expect(ids).toEqual(['t1', 't3']);
     });
   });
 
   describe('get_project_time', () => {
-    it('requests a single entry on the projects API', async () => {
-      await tools.get_project_time.handler({
-        projectId: 'project-1',
-        timeTrackingId: 't1',
-      });
-      expect(client.get).toHaveBeenCalledWith(
-        '/projects/project-1/times/t1',
-        undefined,
-        'projects'
-      );
+    it('calls /projects/{id}/times/{timeId} on the v2 API base', async () => {
+      await tools.get_project_time.handler({ projectId: 'project-1', timeTrackingId: 't1' });
+      expect(client.get).toHaveBeenCalledWith('/projects/project-1/times/t1', undefined, 'v2');
     });
   });
 

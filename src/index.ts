@@ -22,7 +22,6 @@ import { getServiceTools } from './tools/services.js';
 import { getWarehouseTools } from './tools/warehouses.js';
 import { getTimeTrackingTools } from './tools/time-tracking.js';
 import { getAccountingTools } from './tools/accounting.js';
-import { getBankingTools } from './tools/banking.js';
 import { getTeamTools } from './tools/team.js';
 import { getLedgerTools } from './tools/ledger.js';
 import { getTreasuryV2Tools } from './tools/treasury-v2.js';
@@ -77,10 +76,6 @@ const rateLimiter = new RateLimiter({
   },
 });
 
-// Experimental bank-feed reconciliation hits an undocumented internal Holded API
-// and performs a write. It is opt-in: set HOLDED_ENABLE_EXPERIMENTAL_BANKING=true.
-const EXPERIMENTAL_BANKING_ENABLED = process.env.HOLDED_ENABLE_EXPERIMENTAL_BANKING === 'true';
-
 // ListTools uses allTools (built once from the default client). To avoid hiding
 // v2 tools when only a non-default tenant has a v2 key, we gate listing on
 // whether ANY tenant has v2 configured. CallTool rebuilds tools per-tenant and
@@ -106,7 +101,6 @@ const allTools = {
   ...getWarehouseTools(client),
   ...getTimeTrackingTools(client),
   ...getAccountingTools(client),
-  ...(EXPERIMENTAL_BANKING_ENABLED ? getBankingTools(client) : {}),
   // API v2 tools: listed when any tenant has a v2 key configured
   // (HOLDED_API_KEY_V2 / TENANT_N_API_KEY_V2). Existing v1-only users see no change.
   ...(ANY_TENANT_HAS_V2 ? getTeamTools(client) : {}),
@@ -198,7 +192,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     ...getWarehouseTools(tenantContext.client),
     ...getTimeTrackingTools(tenantContext.client),
     ...getAccountingTools(tenantContext.client),
-    ...(EXPERIMENTAL_BANKING_ENABLED ? getBankingTools(tenantContext.client) : {}),
     // v2 tools are registered unconditionally here. A v1-only tenant calling a
     // v2 tool will reach the client, which surfaces the "HOLDED_API_KEY_V2 not
     // configured" config error from buildHeaders instead of "Unknown tool".

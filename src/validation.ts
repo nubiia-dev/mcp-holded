@@ -460,18 +460,26 @@ const isoDateSchema = z
   );
 
 export const listProjectTimesSchema = z.object({
-  /** Restrict results to entries on or after this date (inclusive). */
-  startDate: isoDateSchema.optional(),
-  /** Restrict results to entries on or before this date (inclusive). */
-  endDate: isoDateSchema.optional(),
-  /** When true, keep only approved entries (`approved === 1`). */
-  approvedOnly: z.boolean().optional(),
   /**
-   * When true, return a flat array of time entries (each enriched with its
-   * project id/name) instead of the nested per-project structure. Convenient
-   * for summing hours across a month.
+   * Restrict results to entries on or after this date (inclusive).
+   * Applied client-side on the returned cursor page (v2 does not expose this
+   * as a confirmed query parameter for /project-times).
    */
-  flatten: z.boolean().optional(),
+  startDate: isoDateSchema.optional(),
+  /**
+   * Restrict results to entries on or before this date (inclusive).
+   * Applied client-side on the returned cursor page.
+   */
+  endDate: isoDateSchema.optional(),
+  /**
+   * When true, keep only approved entries (`approved === 1`).
+   * Applied client-side on the returned cursor page.
+   */
+  approvedOnly: z.boolean().optional(),
+  /** Max items per cursor page (v2 default: 50). */
+  limit: z.number().int().positive().optional(),
+  /** Cursor token from a previous response `nextCursor`. */
+  cursor: z.string().optional(),
 });
 
 export const projectTimesSchema = z
@@ -513,22 +521,6 @@ export const dailyLedgerSchema = z.object({
   limit: z.number().int().positive().optional(),
   /** Cursor token from a previous response `nextCursor`. */
   cursor: z.string().optional(),
-});
-
-// Banking (EXPERIMENTAL — undocumented internal API) schemas
-//
-// Bank-feed reconciliation lives on Holded's internal API
-// (`/internal/banking/...`), which is not part of the public contract. These
-// schemas exist so the experimental tool validates its identifiers, but the
-// endpoint itself is unverified — see `src/tools/banking.ts`.
-
-export const reconcileBankTransactionSchema = z.object({
-  /** Holded bank account id (the bank-feed account, not a treasury id). */
-  accountId: z.string().min(1),
-  /** Bank-feed transaction id to reconcile. */
-  transactionId: z.string().min(1),
-  /** Optional accounting entry / document id to match the transaction against. */
-  entryId: z.string().min(1).optional(),
 });
 
 /**

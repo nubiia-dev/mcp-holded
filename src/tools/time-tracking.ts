@@ -1,4 +1,5 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 import {
   listProjectTimesSchema,
   projectTimesSchema,
@@ -7,13 +8,19 @@ import {
 } from '../validation.js';
 
 /**
- * Time-tracking tools backed by the Holded **Projects** API
- * (`https://api.holded.com/api/projects/v1`). These are read-only: they expose
+ * Time-tracking tools backed by the Holded **Projects API v2**
+ * (`https://api.holded.com/api/v2`). These are read-only: they expose
  * the hours logged in Holded so they can be reconciled or booked elsewhere
  * (e.g. into an external time sheet). No mutating endpoints are provided.
+ *
+ * v2 returns a **flat cursor-paginated list** of time entries at
+ * `GET /project-times`. The nested `project.timeTracking[]` shape from v1
+ * no longer exists. Date-range and approved-only filters are applied
+ * client-side on the returned cursor page because the v2 `/project-times`
+ * endpoint does not document those as query parameters.
  */
 
-/** A single time-tracking entry as returned by the Holded Projects API. */
+/** A single time-tracking entry as returned by the Holded Projects v2 API. */
 interface HoldedTimeEntry extends Record<string, unknown> {
   /** Duration of the entry in seconds. */
   duration?: number;
@@ -22,21 +29,6 @@ interface HoldedTimeEntry extends Record<string, unknown> {
   /** 1 when the entry has been approved, 0 otherwise. */
   approved?: number;
 }
-
-/** A project with its nested time-tracking entries. */
-interface HoldedProjectTimes extends Record<string, unknown> {
-  id?: string;
-  name?: string;
-  timeTracking?: HoldedTimeEntry[];
-}
-
-/** A flattened entry: the raw entry plus the project it belongs to. */
-type FlattenedTimeEntry = HoldedTimeEntry & {
-  projectId?: string;
-  projectName?: string;
-  /** Convenience: `duration` expressed in hours (`duration / 3600`). */
-  hours?: number;
-};
 
 /**
  * Format a Unix timestamp (seconds) as a `YYYY-MM-DD` calendar date using the
@@ -85,86 +77,63 @@ function entryMatches(
   return true;
 }
 
-/**
- * Apply the optional filters to a list of projects, returning either the
- * nested per-project structure (with non-matching entries removed) or a flat
- * list of enriched entries.
- *
- * @param projects - Projects with their `timeTracking` arrays.
- * @param args - Filter + shape options.
- * @returns Filtered projects, or a flat entry array when `flatten` is set.
- */
-function shapeProjectTimes(
-  projects: HoldedProjectTimes[],
-  args: { startDate?: string; endDate?: string; approvedOnly?: boolean; flatten?: boolean }
-): HoldedProjectTimes[] | FlattenedTimeEntry[] {
-  if (args.flatten) {
-    const flat: FlattenedTimeEntry[] = [];
-    for (const project of projects) {
-      for (const entry of project.timeTracking ?? []) {
-        if (entryMatches(entry, args)) {
-          flat.push({
-            ...entry,
-            projectId: project.id,
-            projectName: project.name,
-            hours: typeof entry.duration === 'number' ? entry.duration / 3600 : undefined,
-          });
-        }
-      }
-    }
-    return flat;
-  }
-
-  return projects.map((project) => ({
-    ...project,
-    timeTracking: (project.timeTracking ?? []).filter((entry) => entryMatches(entry, args)),
-  }));
-}
-
 export function getTimeTrackingTools(client: HoldedClient) {
   return {
-    // List time tracking across all projects
+    // List time tracking across all projects (v2 flat cursor-paginated list)
     list_project_times: {
       description:
-        'List time-tracking entries across all Holded projects (Projects API). Each project includes a timeTracking[] array of entries with duration (seconds), date (Unix seconds), user, and approved (0/1). Optionally filter by date range (YYYY-MM-DD, inclusive) and approved-only, and flatten into a single entry list with hours pre-computed. Read-only.',
+        'List time-tracking entries across all Holded projects (Projects API v2). Returns a cursor-paginated flat list of entries; pass the previous `nextCursor` as `cursor` to fetch the next page. Each entry contains timeId, duration (seconds), date (Unix seconds), approved (0/1), projectId, and projectName. ' +
+        'The approvedOnly, startDate, and endDate filters are applied client-side on the current page — use pagination to iterate over the full dataset. Read-only.',
       inputSchema: {
         type: 'object' as const,
         properties: {
+          limit: {
+            type: 'number',
+            description: 'Max items per cursor page (default: 50)',
+          },
+          cursor: {
+            type: 'string',
+            description: 'Cursor token from a previous response nextCursor to fetch the next page',
+          },
           startDate: {
             type: 'string',
-            description: 'Keep only entries on or after this date (YYYY-MM-DD, inclusive)',
+            description:
+              'Keep only entries on or after this date (YYYY-MM-DD, inclusive) — applied client-side on the returned page',
           },
           endDate: {
             type: 'string',
-            description: 'Keep only entries on or before this date (YYYY-MM-DD, inclusive)',
+            description:
+              'Keep only entries on or before this date (YYYY-MM-DD, inclusive) — applied client-side on the returned page',
           },
           approvedOnly: {
             type: 'boolean',
-            description: 'Keep only approved entries (approved === 1). Default: false',
-          },
-          flatten: {
-            type: 'boolean',
             description:
-              'Return a flat array of entries (each with projectId, projectName, and hours = duration/3600) instead of the nested per-project structure. Default: false',
+              'Keep only approved entries (approved === 1) — applied client-side on the returned page. Default: false',
           },
         },
         required: [],
       },
       readOnlyHint: true,
       handler: withValidation(listProjectTimesSchema, async (args) => {
-        const projects = (await client.get(
-          '/projects/times',
-          undefined,
-          'projects'
-        )) as HoldedProjectTimes[];
-        return shapeProjectTimes(projects, args);
+        const { startDate, endDate, approvedOnly, limit, cursor } = args;
+        const params = cursorParams({ limit, cursor });
+        const raw = await client.get('/project-times', params, 'v2');
+        const normalized = normalizeV2List(raw);
+        if (startDate || endDate || approvedOnly) {
+          const filteredItems = normalized.items.filter((item) =>
+            entryMatches(item as HoldedTimeEntry, { startDate, endDate, approvedOnly })
+          );
+          return { ...normalized, items: filteredItems };
+        }
+        return normalized;
       }),
     },
 
-    // List time tracking for a single project
+    // List time tracking for a single project (v2)
     list_project_times_by_project: {
       description:
-        'List time-tracking entries for a single Holded project (Projects API). Returns a one-element array holding the project and its filtered timeTracking[] entries; set flatten: true to get a flat list of entries with hours pre-computed instead. Supports the same date-range and approved-only filters as list_project_times. Read-only.',
+        'List time-tracking entries for a single Holded project (Projects API v2). Returns a cursor-paginated flat list of entries for the given projectId. Pass the previous `nextCursor` as `cursor` to fetch the next page. ' +
+        'The approvedOnly, startDate, and endDate filters are applied client-side on the current page. Read-only.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -172,46 +141,52 @@ export function getTimeTrackingTools(client: HoldedClient) {
             type: 'string',
             description: 'The Holded project ID',
           },
+          limit: {
+            type: 'number',
+            description: 'Max items per cursor page (default: 50)',
+          },
+          cursor: {
+            type: 'string',
+            description: 'Cursor token from a previous response nextCursor to fetch the next page',
+          },
           startDate: {
             type: 'string',
-            description: 'Keep only entries on or after this date (YYYY-MM-DD, inclusive)',
+            description:
+              'Keep only entries on or after this date (YYYY-MM-DD, inclusive) — applied client-side on the returned page',
           },
           endDate: {
             type: 'string',
-            description: 'Keep only entries on or before this date (YYYY-MM-DD, inclusive)',
+            description:
+              'Keep only entries on or before this date (YYYY-MM-DD, inclusive) — applied client-side on the returned page',
           },
           approvedOnly: {
             type: 'boolean',
-            description: 'Keep only approved entries (approved === 1). Default: false',
-          },
-          flatten: {
-            type: 'boolean',
             description:
-              'Return a flat array of entries (each with projectId, projectName, and hours = duration/3600) instead of the nested structure. Default: false',
+              'Keep only approved entries (approved === 1) — applied client-side on the returned page. Default: false',
           },
         },
         required: ['projectId'],
       },
       readOnlyHint: true,
       handler: withValidation(projectTimesSchema, async (args) => {
-        const { projectId, ...filters } = args;
-        const project = (await client.get(
-          `/projects/${projectId}/times`,
-          undefined,
-          'projects'
-        )) as HoldedProjectTimes;
-        // Normalize to the same shape as list_project_times for consistent filtering.
-        const normalized: HoldedProjectTimes = Array.isArray(project)
-          ? { id: projectId, timeTracking: project as unknown as HoldedTimeEntry[] }
-          : project;
-        return shapeProjectTimes([normalized], filters);
+        const { projectId, startDate, endDate, approvedOnly, limit, cursor } = args;
+        const params = cursorParams({ limit, cursor });
+        const raw = await client.get(`/projects/${projectId}/times`, params, 'v2');
+        const normalized = normalizeV2List(raw);
+        if (startDate || endDate || approvedOnly) {
+          const filteredItems = normalized.items.filter((item) =>
+            entryMatches(item as HoldedTimeEntry, { startDate, endDate, approvedOnly })
+          );
+          return { ...normalized, items: filteredItems };
+        }
+        return normalized;
       }),
     },
 
-    // Get a single time-tracking entry
+    // Get a single time-tracking entry (v2)
     get_project_time: {
       description:
-        'Get a single time-tracking entry by project ID and time-tracking ID (Projects API). Read-only.',
+        'Get a single time-tracking entry by project ID and time-tracking ID (Projects API v2). Read-only.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -221,7 +196,7 @@ export function getTimeTrackingTools(client: HoldedClient) {
           },
           timeTrackingId: {
             type: 'string',
-            description: 'The time-tracking entry ID (the entry timeId)',
+            description: 'The time-tracking entry ID (timeId)',
           },
         },
         required: ['projectId', 'timeTrackingId'],
@@ -231,7 +206,7 @@ export function getTimeTrackingTools(client: HoldedClient) {
         return client.get(
           `/projects/${args.projectId}/times/${args.timeTrackingId}`,
           undefined,
-          'projects'
+          'v2'
         );
       }),
     },
