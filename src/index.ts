@@ -23,6 +23,9 @@ import { getWarehouseTools } from './tools/warehouses.js';
 import { getTimeTrackingTools } from './tools/time-tracking.js';
 import { getAccountingTools } from './tools/accounting.js';
 import { getBankingTools } from './tools/banking.js';
+import { getTeamTools } from './tools/team.js';
+import { getLedgerTools } from './tools/ledger.js';
+import { getTreasuryV2Tools } from './tools/treasury-v2.js';
 
 // Initialize multi-tenancy support
 const tenantConfigs = loadTenantConfigs();
@@ -63,6 +66,14 @@ const rateLimiter = new RateLimiter({
     list_project_times_by_project: { maxRequests: 60, windowMs: 60000 },
     get_daily_ledger: { maxRequests: 60, windowMs: 60000 },
     get_chart_of_accounts: { maxRequests: 60, windowMs: 60000 },
+    // v2 write/destructive operations
+    create_employee: { maxRequests: 20, windowMs: 60000 },
+    delete_employee: { maxRequests: 10, windowMs: 60000 },
+    create_salary_record: { maxRequests: 20, windowMs: 60000 },
+    delete_salary_record: { maxRequests: 10, windowMs: 60000 },
+    create_ledger_entry: { maxRequests: 20, windowMs: 60000 },
+    create_bank_movement: { maxRequests: 20, windowMs: 60000 },
+    delete_bank_account: { maxRequests: 10, windowMs: 60000 },
   },
 });
 
@@ -88,6 +99,11 @@ const allTools = {
   ...getTimeTrackingTools(client),
   ...getAccountingTools(client),
   ...(EXPERIMENTAL_BANKING_ENABLED ? getBankingTools(client) : {}),
+  // API v2 tools: only registered when the tenant has a v2 key configured
+  // (HOLDED_API_KEY_V2 / TENANT_N_API_KEY_V2). Existing v1 users see no change.
+  ...(client.hasV2() ? getTeamTools(client) : {}),
+  ...(client.hasV2() ? getLedgerTools(client) : {}),
+  ...(client.hasV2() ? getTreasuryV2Tools(client) : {}),
 };
 
 // Create server
@@ -175,6 +191,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     ...getTimeTrackingTools(tenantContext.client),
     ...getAccountingTools(tenantContext.client),
     ...(EXPERIMENTAL_BANKING_ENABLED ? getBankingTools(tenantContext.client) : {}),
+    ...(tenantContext.client.hasV2() ? getTeamTools(tenantContext.client) : {}),
+    ...(tenantContext.client.hasV2() ? getLedgerTools(tenantContext.client) : {}),
+    ...(tenantContext.client.hasV2() ? getTreasuryV2Tools(tenantContext.client) : {}),
   };
 
   const tool = tenantTools[name as keyof typeof tenantTools];
