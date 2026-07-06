@@ -1262,7 +1262,7 @@ describe('Document Tools', () => {
       })) as any;
       expect(client.post).toHaveBeenCalledWith('/invoices/doc-1/payments', { amount: 100 }, 'v2');
       expect(client.get).toHaveBeenCalledWith('/invoices/doc-1', undefined, 'v2');
-      expect(client.put).toHaveBeenCalledWith('/payments/paydetail-1', { bankId: 'bank-9' });
+      expect(client.put).toHaveBeenCalledWith('/payments/paydetail-1', { bankId: 'bank-9' }, 'v2');
       expect(result._warnings.some((w: string) => /Linked bank account bank-9/.test(w))).toBe(true);
     });
 

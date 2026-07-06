@@ -647,7 +647,7 @@ export function getDocumentTools(client: HoldedClient) {
           bankId: {
             type: 'string',
             description:
-              'Bank account id to link the payment to. Triggers a second step (PUT /payments/{id}) because /pay cannot set the bank link.',
+              'Bank account id to link the payment to. Triggers a second step (PUT /payments/{id}) to set the bank link on the payment.',
           },
         },
         required: ['docType', 'documentId', 'amount'],
@@ -678,7 +678,7 @@ export function getDocumentTools(client: HoldedClient) {
             const payments = Array.isArray(doc?.paymentsDetail) ? doc.paymentsDetail : [];
             const newest = payments[payments.length - 1];
             if (newest?.id) {
-              await client.put(`/payments/${newest.id}`, { bankId });
+              await client.put(`/payments/${newest.id}`, { bankId }, 'v2');
               warnings.push(`Linked bank account ${bankId} to payment ${newest.id}.`);
             } else {
               warnings.push(
