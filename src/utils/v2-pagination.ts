@@ -4,12 +4,13 @@
  * The exact response envelope of v2 list endpoints is not yet pinned down by
  * the public docs, so normalizeV2List accepts the shapes we may encounter
  * (bare array, { items }, { data }, cursor under several names) and always
- * returns { items, nextCursor? } so MCP clients get a stable contract.
+ * returns { items, nextCursor?, hasMore? } so MCP clients get a stable contract.
  */
 
 export interface V2ListResult {
   items: unknown[];
   nextCursor?: string;
+  hasMore?: boolean;
   [key: string]: unknown;
 }
 
@@ -21,9 +22,15 @@ export function normalizeV2List(response: unknown): V2ListResult {
   const obj = (response ?? {}) as Record<string, unknown>;
   const items = Array.isArray(obj.items) ? obj.items : Array.isArray(obj.data) ? obj.data : [];
 
-  const cursorObj = obj.cursor as Record<string, unknown> | undefined;
+  // Real v2 envelope: cursor is a plain string ("page:2") or null; legacy
+  // fallbacks kept for robustness against undocumented variants.
+  const cursorObj =
+    typeof obj.cursor === 'object' && obj.cursor !== null
+      ? (obj.cursor as Record<string, unknown>)
+      : undefined;
   const paginationObj = obj.pagination as Record<string, unknown> | undefined;
   const candidates = [
+    obj.cursor,
     obj.nextCursor,
     obj.next,
     cursorObj?.next,
@@ -31,17 +38,22 @@ export function normalizeV2List(response: unknown): V2ListResult {
     paginationObj?.next,
   ];
   const nextCursor = candidates.find((c) => typeof c === 'string' && c.length > 0) as
-    string | undefined;
+    | string
+    | undefined;
 
   const rest: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (key !== 'cursor' && key !== 'pagination' && key !== 'data') {
+    if (!['cursor', 'has_more', 'pagination', 'data', 'next', 'nextCursor', 'items'].includes(key)) {
       rest[key] = value;
     }
   }
+
   const result: V2ListResult = { ...rest, items };
   if (nextCursor) {
     result.nextCursor = nextCursor;
+  }
+  if (typeof obj.has_more === 'boolean') {
+    result.hasMore = obj.has_more;
   }
   return result;
 }
