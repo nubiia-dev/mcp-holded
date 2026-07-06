@@ -12,7 +12,7 @@ describe('Expenses Account Tools', () => {
     tools = getExpensesAccountTools(client);
   });
 
-  // Realistic /expensesaccounts shape: the PGC number lives in `accountNum`
+  // Realistic /expenses-accounts shape: the PGC number lives in `accountNum`
   // (not `code`), alongside the Holded internal `id`.
   const sampleAccounts = [
     { id: 'acct-1', name: 'Office Supplies', accountNum: 62900000 },
@@ -20,19 +20,36 @@ describe('Expenses Account Tools', () => {
   ];
 
   describe('list_expenses_accounts', () => {
-    it('should list all expenses accounts', async () => {
+    it('should list all expenses accounts via v2 route', async () => {
       await tools.list_expenses_accounts.handler({});
-      expect(client.get).toHaveBeenCalledWith('/expensesaccounts');
+      expect(client.get).toHaveBeenCalledWith('/expenses-accounts', {}, 'v2');
+    });
+
+    it('should pass limit to API', async () => {
+      await tools.list_expenses_accounts.handler({ limit: 20 });
+      expect(client.get).toHaveBeenCalledWith('/expenses-accounts', { limit: 20 }, 'v2');
+    });
+
+    it('should pass cursor to API', async () => {
+      await tools.list_expenses_accounts.handler({ cursor: 'page:2' });
+      expect(client.get).toHaveBeenCalledWith('/expenses-accounts', { cursor: 'page:2' }, 'v2');
+    });
+
+    it('should normalize v2 envelope with nextCursor and hasMore', async () => {
+      client.get = vi.fn().mockResolvedValue({ items: sampleAccounts, cursor: 'page:2', has_more: true });
+      const result = (await tools.list_expenses_accounts.handler({})) as any;
+      expect(result.items).toEqual(sampleAccounts);
+      expect(result.nextCursor).toBe('page:2');
+      expect(result.hasMore).toBe(true);
     });
 
     it('surfaces id and accountNum in default fields', async () => {
-      (client.get as any).mockResolvedValue(sampleAccounts);
+      client.get = vi.fn().mockResolvedValue({ items: sampleAccounts });
 
       const result = (await tools.list_expenses_accounts.handler({})) as {
         items: Array<Record<string, unknown>>;
       };
 
-      // Regression: the id and the PGC `accountNum` used to be dropped.
       expect(result.items[0]).toEqual({
         id: 'acct-1',
         name: 'Office Supplies',
@@ -43,7 +60,7 @@ describe('Expenses Account Tools', () => {
     });
 
     it('returns only the requested fields when `fields` is provided', async () => {
-      (client.get as any).mockResolvedValue(sampleAccounts);
+      client.get = vi.fn().mockResolvedValue({ items: sampleAccounts });
 
       const result = (await tools.list_expenses_accounts.handler({
         fields: ['id', 'accountNum'],
@@ -54,71 +71,64 @@ describe('Expenses Account Tools', () => {
     });
 
     it('returns only counts in summary mode', async () => {
-      (client.get as any).mockResolvedValue(sampleAccounts);
+      client.get = vi.fn().mockResolvedValue({ items: sampleAccounts });
 
       const result = (await tools.list_expenses_accounts.handler({ summary: true })) as {
-        total: number;
-        totalPages: number;
+        count: number;
+        nextCursor?: string;
+        hasMore?: boolean;
       };
 
-      expect(result).toEqual({ total: 2, totalPages: 1 });
+      expect(result.count).toBe(2);
     });
 
-    it('paginates results', async () => {
-      (client.get as any).mockResolvedValue(sampleAccounts);
-
-      const result = (await tools.list_expenses_accounts.handler({ page: 2, pageSize: 1 })) as {
-        items: Array<Record<string, unknown>>;
-        page: number;
-        total: number;
-      };
-
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].id).toBe('acct-2');
-      expect(result.page).toBe(2);
-      expect(result.total).toBe(2);
+    it('returns nextCursor and hasMore in summary mode when present', async () => {
+      client.get = vi.fn().mockResolvedValue({ items: sampleAccounts, cursor: 'page:2', has_more: true });
+      const result = (await tools.list_expenses_accounts.handler({ summary: true })) as any;
+      expect(result.count).toBe(2);
+      expect(result.hasMore).toBe(true);
     });
   });
 
   describe('create_expenses_account', () => {
-    it('should create an expenses account', async () => {
+    it('should create an expenses account via v2 route', async () => {
       await tools.create_expenses_account.handler({ name: 'Office Supplies' });
-      expect(client.post).toHaveBeenCalledWith('/expensesaccounts', { name: 'Office Supplies' });
+      expect(client.post).toHaveBeenCalledWith('/expenses-accounts', { name: 'Office Supplies' }, 'v2');
     });
 
     it('should include code if provided', async () => {
       const args = { name: 'Travel', code: '6290' };
       await tools.create_expenses_account.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/expensesaccounts', args);
+      expect(client.post).toHaveBeenCalledWith('/expenses-accounts', args, 'v2');
     });
   });
 
   describe('get_expenses_account', () => {
-    it('should get an expenses account by ID', async () => {
+    it('should get an expenses account by ID via v2 route', async () => {
       await tools.get_expenses_account.handler({ accountId: 'account-123' });
-      expect(client.get).toHaveBeenCalledWith('/expensesaccounts/account-123');
+      expect(client.get).toHaveBeenCalledWith('/expenses-accounts/account-123', undefined, 'v2');
     });
   });
 
   describe('update_expenses_account', () => {
-    it('should update an expenses account', async () => {
+    it('should update an expenses account via v2 route', async () => {
       const args = {
         accountId: 'account-123',
         name: 'Updated Name',
         code: '6300',
       };
       await tools.update_expenses_account.handler(args);
-      expect(client.put).toHaveBeenCalledWith('/expensesaccounts/account-123', {
+      expect(client.put).toHaveBeenCalledWith('/expenses-accounts/account-123', {
         name: 'Updated Name',
         code: '6300',
-      });
+      }, 'v2');
     });
   });
 
   describe('delete_expenses_account', () => {
-    it('should delete an expenses account', async () => {
+    it('should delete an expenses account via v2 route', async () => {
       await tools.delete_expenses_account.handler({ accountId: 'account-123' });
-      expect(client.delete).toHaveBeenCalledWith('/expensesaccounts/account-123');
+      expect(client.delete).toHaveBeenCalledWith('/expenses-accounts/account-123', 'v2');
     });
   });
 });

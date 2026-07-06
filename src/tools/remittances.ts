@@ -1,86 +1,68 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 
 export function getRemittanceTools(client: HoldedClient) {
   return {
     // List Remittances
     list_remittances: {
       description:
-        'List all remittances with pagination support. Supports field filtering to reduce response size.',
+        'List all remittances (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma. NOTE: namespace relocated from /remittances to /treasury/remittances in v2.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          page: {
+          limit: {
             type: 'number',
-            description: 'Page number (starting from 1, default: 1)',
+            description: 'Max items per page (API caps at 100)',
           },
-          pageSize: {
-            type: 'number',
-            description: 'Number of items per page (default: 50, max: 500)',
+          cursor: {
+            type: 'string',
+            description: 'Cursor from a previous response nextCursor',
           },
           summary: {
             type: 'boolean',
-            description: 'Return only total count and page count without items (default: false)',
+            description:
+              'Return only count and pagination metadata without items (default: false)',
           },
           fields: {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "name", "date"]). Reduces response size by 70-90%. If not provided, returns default fields: id, name, date',
+              'Project only these fields per item (e.g. ["id", "name", "date"]). Reduces response size.',
           },
         },
         required: [],
       },
       readOnlyHint: true,
       handler: async (
-        args: { page?: number; pageSize?: number; summary?: boolean; fields?: string[] } = {}
+        args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const remittances = (await client.get('/remittances')) as Array<Record<string, unknown>>;
+        const result = normalizeV2List(
+          await client.get('/treasury/remittances', cursorParams(args), 'v2')
+        );
 
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['id', 'name', 'date'];
-        const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
-
-        const filtered = remittances.map((remittance) => {
-          const result: Record<string, unknown> = {};
-          for (const field of fieldsToInclude) {
-            if (field in remittance) {
-              result[field] = remittance[field];
-            }
-          }
-          return result;
-        });
-
-        // Pagination
-        const page = Math.max(args.page ?? 1, 1);
-        const pageSize = Math.min(args.pageSize ?? 50, 500);
-        const total = filtered.length;
-        const totalPages = Math.ceil(total / pageSize);
-        const startIndex = (page - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const items = filtered.slice(startIndex, endIndex);
-
-        // Summary mode: return only metadata
-        if (args.summary) {
-          return {
-            total,
-            totalPages,
-          };
+        if (args.fields?.length) {
+          result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
+            const picked: Record<string, unknown> = {};
+            for (const f of args.fields as string[]) if (f in item) picked[f] = item[f];
+            return picked;
+          });
         }
 
-        return {
-          items,
-          page,
-          pageSize,
-          total,
-          totalPages,
-        };
+        if (args.summary) {
+          const out: Record<string, unknown> = { count: result.items.length };
+          if (result.nextCursor) out.nextCursor = result.nextCursor;
+          if (result.hasMore !== undefined) out.hasMore = result.hasMore;
+          return out;
+        }
+
+        return result;
       },
     },
 
     // Get Remittance
     get_remittance: {
-      description: 'Get a specific remittance by ID',
+      description:
+        'Get a specific remittance by ID (Holded API v2). NOTE: route relocated to /treasury/remittances/{id} in v2.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -93,7 +75,7 @@ export function getRemittanceTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { remittanceId: string }) => {
-        return client.get(`/remittances/${args.remittanceId}`);
+        return client.get(`/treasury/remittances/${args.remittanceId}`, undefined, 'v2');
       },
     },
   };
