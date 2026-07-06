@@ -168,6 +168,7 @@ Iterate by passing `nextCursor` as `cursor` until `hasMore` is `false`.
 | `get_daily_ledger` dates | Unix timestamps (`starttmp`/`endtmp`) | ISO 8601 strings (`start_date`/`end_date`); legacy Unix args still accepted as a convenience |
 | `get_taxes` | Paginated | Returns all taxes in one call (no pagination args) |
 | `update_product_stock` | Optional warehouse | `warehouse_id` is now required |
+| List tools field projections | Reduced default set of fields | Full v2 payload returned; use `fields` argument to filter |
 
 ### Contact attachments
 
