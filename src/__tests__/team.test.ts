@@ -90,3 +90,42 @@ describe('Team Tools — time tracking', () => {
     expect(client.delete).toHaveBeenCalledWith('/employee-times/t1', 'v2');
   });
 });
+
+describe('Team Tools — salary records', () => {
+  let client: ReturnType<typeof createMockClient>;
+  let tools: ReturnType<typeof getTeamTools>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client = createMockClient();
+    tools = getTeamTools(client);
+  });
+
+  it('list_salary_records lists on v2 with cursor params', async () => {
+    (client.get as any).mockResolvedValue({ items: [] });
+    await tools.list_salary_records.handler({ limit: 20 });
+    expect(client.get).toHaveBeenCalledWith('/salary-records', { limit: 20 }, 'v2');
+  });
+
+  it('get_salary_record fetches one record', async () => {
+    await tools.get_salary_record.handler({ salaryRecordId: 's1' });
+    expect(client.get).toHaveBeenCalledWith('/salary-records/s1', undefined, 'v2');
+  });
+
+  it('create/update/delete_salary_record hit the CRUD routes', async () => {
+    const data = { employeeId: 'e1', lines: [] };
+    await tools.create_salary_record.handler({ data });
+    expect(client.post).toHaveBeenCalledWith('/salary-records', data, 'v2');
+
+    await tools.update_salary_record.handler({ salaryRecordId: 's1', data });
+    expect(client.put).toHaveBeenCalledWith('/salary-records/s1', data, 'v2');
+
+    await tools.delete_salary_record.handler({ salaryRecordId: 's1' });
+    expect(client.delete).toHaveBeenCalledWith('/salary-records/s1', 'v2');
+  });
+
+  it('get_salary_record_defaults fetches the defaults', async () => {
+    await tools.get_salary_record_defaults.handler();
+    expect(client.get).toHaveBeenCalledWith('/salary-records/form-data', undefined, 'v2');
+  });
+});

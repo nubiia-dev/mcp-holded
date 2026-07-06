@@ -236,5 +236,94 @@ export function getTeamTools(client: HoldedClient) {
       handler: async (args: { timeId: string }) =>
         client.delete(`/employee-times/${args.timeId}`, 'v2'),
     },
+
+    list_salary_records: {
+      description:
+        'List payroll salary records (Holded API v2, requires scope accounting:payrolls.read). Each record has employee info, earnings/deductions lines, totals and payment status (PENDING, PAID, PARTIALLY_PAID). Cursor-paginated.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          limit: { type: 'number', description: 'Max items per page' },
+          cursor: { type: 'string', description: 'Cursor from a previous response nextCursor' },
+        },
+        required: [],
+      },
+      readOnlyHint: true,
+      handler: async (args: { limit?: number; cursor?: string } = {}) =>
+        normalizeV2List(await client.get('/salary-records', cursorParams(args), 'v2')),
+    },
+
+    get_salary_record: {
+      description:
+        'Get a payroll salary record by ID (Holded API v2, scope accounting:payrolls.read). Returns line-by-line earnings and deductions, accounting accounts, totals and payment status.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          salaryRecordId: { type: 'string', description: 'Salary record ID (24-char hex)' },
+        },
+        required: ['salaryRecordId'],
+      },
+      readOnlyHint: true,
+      handler: async (args: { salaryRecordId: string }) =>
+        client.get(`/salary-records/${args.salaryRecordId}`, undefined, 'v2'),
+    },
+
+    create_salary_record: {
+      description:
+        `WRITE: creates a real payroll record in Holded (API v2) — affects accounting and HR data. ` +
+        `Use get_salary_record_defaults first to obtain a valid base payload. ` +
+        `\`data\` is sent verbatim as the request body — see ${DOC_URL} (Registros de nómina → Crear).`,
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          data: { type: 'object', description: 'Salary record payload, sent verbatim as body' },
+        },
+        required: ['data'],
+      },
+      handler: async (args: { data: Record<string, unknown> }) =>
+        client.post('/salary-records', args.data, 'v2'),
+    },
+
+    update_salary_record: {
+      description:
+        `WRITE: updates a payroll record in Holded (API v2) — affects accounting and HR data. ` +
+        `\`data\` is sent verbatim as the request body — see ${DOC_URL} (Registros de nómina → Actualizar).`,
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          salaryRecordId: { type: 'string', description: 'Salary record ID' },
+          data: { type: 'object', description: 'Fields to update, sent verbatim as body' },
+        },
+        required: ['salaryRecordId', 'data'],
+      },
+      handler: async (args: { salaryRecordId: string; data: Record<string, unknown> }) =>
+        client.put(`/salary-records/${args.salaryRecordId}`, args.data, 'v2'),
+    },
+
+    delete_salary_record: {
+      description:
+        'DESTRUCTIVE: permanently deletes a payroll record in Holded (API v2). This cannot be undone and affects accounting data.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          salaryRecordId: { type: 'string', description: 'Salary record ID' },
+        },
+        required: ['salaryRecordId'],
+      },
+      handler: async (args: { salaryRecordId: string }) =>
+        client.delete(`/salary-records/${args.salaryRecordId}`, 'v2'),
+    },
+
+    get_salary_record_defaults: {
+      description:
+        'Get the default data for creating a payroll record (Holded API v2). Useful as a base payload for create_salary_record.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      },
+      readOnlyHint: true,
+      handler: async () => client.get('/salary-records/form-data', undefined, 'v2'),
+    },
   };
 }
