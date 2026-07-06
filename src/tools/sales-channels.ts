@@ -35,9 +35,7 @@ export function getSalesChannelTools(client: HoldedClient) {
       handler: async (
         args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const result = normalizeV2List(
-          await client.get('/sales-channels', cursorParams(args), 'v2')
-        );
+        const result = normalizeV2List(await client.get('/sales-channels', cursorParams(args)));
 
         if (args.fields?.length) {
           result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
@@ -73,7 +71,7 @@ export function getSalesChannelTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: Record<string, unknown>) => {
-        return client.post('/sales-channels', args, 'v2');
+        return client.post('/sales-channels', args);
       },
     },
 
@@ -92,7 +90,7 @@ export function getSalesChannelTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { channelId: string }) => {
-        return client.get(`/sales-channels/${args.channelId}`, undefined, 'v2');
+        return client.get(`/sales-channels/${args.channelId}`, undefined);
       },
     },
 
@@ -116,7 +114,7 @@ export function getSalesChannelTools(client: HoldedClient) {
       destructiveHint: true,
       handler: async (args: { channelId: string; [key: string]: unknown }) => {
         const { channelId, ...body } = args;
-        return client.put(`/sales-channels/${channelId}`, body, 'v2');
+        return client.put(`/sales-channels/${channelId}`, body);
       },
     },
 
@@ -135,7 +133,7 @@ export function getSalesChannelTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: { channelId: string }) => {
-        return client.delete(`/sales-channels/${args.channelId}`, 'v2');
+        return client.delete(`/sales-channels/${args.channelId}`);
       },
     },
   };

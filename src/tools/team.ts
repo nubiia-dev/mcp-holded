@@ -22,7 +22,7 @@ export function getTeamTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { limit?: number; cursor?: string } = {}) =>
-        normalizeV2List(await client.get('/employees', cursorParams(args), 'v2')),
+        normalizeV2List(await client.get('/employees', cursorParams(args))),
     },
 
     get_employee: {
@@ -36,7 +36,7 @@ export function getTeamTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { employeeId: string }) =>
-        client.get(`/employees/${args.employeeId}`, undefined, 'v2'),
+        client.get(`/employees/${args.employeeId}`, undefined),
     },
 
     create_employee: {
@@ -51,7 +51,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['data'],
       },
       handler: async (args: { data: Record<string, unknown> }) =>
-        client.post('/employees', args.data, 'v2'),
+        client.post('/employees', args.data),
     },
 
     update_employee: {
@@ -67,7 +67,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['employeeId', 'data'],
       },
       handler: async (args: { employeeId: string; data: Record<string, unknown> }) =>
-        client.put(`/employees/${args.employeeId}`, args.data, 'v2'),
+        client.put(`/employees/${args.employeeId}`, args.data),
     },
 
     delete_employee: {
@@ -81,7 +81,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['employeeId'],
       },
       handler: async (args: { employeeId: string }) =>
-        client.delete(`/employees/${args.employeeId}`, 'v2'),
+        client.delete(`/employees/${args.employeeId}`),
     },
 
     get_employee_contract: {
@@ -95,7 +95,7 @@ export function getTeamTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { employeeId: string }) =>
-        client.get(`/employees/${args.employeeId}/contract`, undefined, 'v2'),
+        client.get(`/employees/${args.employeeId}/contract`, undefined),
     },
 
     update_employee_contract: {
@@ -111,7 +111,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['employeeId', 'data'],
       },
       handler: async (args: { employeeId: string; data: Record<string, unknown> }) =>
-        client.put(`/employees/${args.employeeId}/contract`, args.data, 'v2'),
+        client.put(`/employees/${args.employeeId}/contract`, args.data),
     },
 
     clock_in_employee: {
@@ -123,7 +123,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['employeeId'],
       },
       handler: async (args: { employeeId: string }) =>
-        client.post(`/employees/${args.employeeId}/clock-in`, undefined, 'v2'),
+        client.post(`/employees/${args.employeeId}/clock-in`, undefined),
     },
 
     clock_out_employee: {
@@ -134,7 +134,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['employeeId'],
       },
       handler: async (args: { employeeId: string }) =>
-        client.post(`/employees/${args.employeeId}/clock-out`, undefined, 'v2'),
+        client.post(`/employees/${args.employeeId}/clock-out`, undefined),
     },
 
     pause_employee: {
@@ -146,7 +146,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['employeeId'],
       },
       handler: async (args: { employeeId: string }) =>
-        client.post(`/employees/${args.employeeId}/pause`, undefined, 'v2'),
+        client.post(`/employees/${args.employeeId}/pause`, undefined),
     },
 
     unpause_employee: {
@@ -157,7 +157,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['employeeId'],
       },
       handler: async (args: { employeeId: string }) =>
-        client.post(`/employees/${args.employeeId}/unpause`, undefined, 'v2'),
+        client.post(`/employees/${args.employeeId}/unpause`, undefined),
     },
 
     list_employee_times: {
@@ -177,7 +177,7 @@ export function getTeamTools(client: HoldedClient) {
         const endpoint = args.employeeId
           ? `/employees/${args.employeeId}/times`
           : '/employee-times';
-        return normalizeV2List(await client.get(endpoint, cursorParams(args), 'v2'));
+        return normalizeV2List(await client.get(endpoint, cursorParams(args)));
       },
     },
 
@@ -190,7 +190,7 @@ export function getTeamTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { timeId: string }) =>
-        client.get(`/employee-times/${args.timeId}`, undefined, 'v2'),
+        client.get(`/employee-times/${args.timeId}`, undefined),
     },
 
     create_employee_time: {
@@ -206,7 +206,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['employeeId', 'data'],
       },
       handler: async (args: { employeeId: string; data: Record<string, unknown> }) =>
-        client.post(`/employees/${args.employeeId}/times`, args.data, 'v2'),
+        client.post(`/employees/${args.employeeId}/times`, args.data),
     },
 
     update_employee_time: {
@@ -222,7 +222,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['timeId', 'data'],
       },
       handler: async (args: { timeId: string; data: Record<string, unknown> }) =>
-        client.put(`/employee-times/${args.timeId}`, args.data, 'v2'),
+        client.put(`/employee-times/${args.timeId}`, args.data),
     },
 
     delete_employee_time: {
@@ -233,8 +233,7 @@ export function getTeamTools(client: HoldedClient) {
         properties: { timeId: { type: 'string', description: 'Time record ID' } },
         required: ['timeId'],
       },
-      handler: async (args: { timeId: string }) =>
-        client.delete(`/employee-times/${args.timeId}`, 'v2'),
+      handler: async (args: { timeId: string }) => client.delete(`/employee-times/${args.timeId}`),
     },
 
     list_salary_records: {
@@ -250,7 +249,7 @@ export function getTeamTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { limit?: number; cursor?: string } = {}) =>
-        normalizeV2List(await client.get('/salary-records', cursorParams(args), 'v2')),
+        normalizeV2List(await client.get('/salary-records', cursorParams(args))),
     },
 
     get_salary_record: {
@@ -265,7 +264,7 @@ export function getTeamTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { salaryRecordId: string }) =>
-        client.get(`/salary-records/${args.salaryRecordId}`, undefined, 'v2'),
+        client.get(`/salary-records/${args.salaryRecordId}`, undefined),
     },
 
     create_salary_record: {
@@ -281,7 +280,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['data'],
       },
       handler: async (args: { data: Record<string, unknown> }) =>
-        client.post('/salary-records', args.data, 'v2'),
+        client.post('/salary-records', args.data),
     },
 
     update_salary_record: {
@@ -297,7 +296,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['salaryRecordId', 'data'],
       },
       handler: async (args: { salaryRecordId: string; data: Record<string, unknown> }) =>
-        client.put(`/salary-records/${args.salaryRecordId}`, args.data, 'v2'),
+        client.put(`/salary-records/${args.salaryRecordId}`, args.data),
     },
 
     delete_salary_record: {
@@ -311,7 +310,7 @@ export function getTeamTools(client: HoldedClient) {
         required: ['salaryRecordId'],
       },
       handler: async (args: { salaryRecordId: string }) =>
-        client.delete(`/salary-records/${args.salaryRecordId}`, 'v2'),
+        client.delete(`/salary-records/${args.salaryRecordId}`),
     },
 
     get_salary_record_defaults: {
@@ -323,7 +322,7 @@ export function getTeamTools(client: HoldedClient) {
         required: [],
       },
       readOnlyHint: true,
-      handler: async () => client.get('/salary-records/form-data', undefined, 'v2'),
+      handler: async () => client.get('/salary-records/form-data', undefined),
     },
   };
 }

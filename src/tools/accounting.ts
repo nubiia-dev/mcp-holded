@@ -103,11 +103,17 @@ export function getAccountingTools(client: HoldedClient) {
         type: 'object' as const,
         properties: {
           limit: { type: 'number', description: 'Max items per page' },
-          cursor: { type: 'string', description: 'Cursor token from a previous response nextCursor' },
+          cursor: {
+            type: 'string',
+            description: 'Cursor token from a previous response nextCursor',
+          },
           archived: { type: 'boolean', description: 'Include archived accounts (default: false)' },
           start_date: { type: 'string', description: 'Filter start date (ISO 8601, YYYY-MM-DD)' },
           end_date: { type: 'string', description: 'Filter end date (ISO 8601, YYYY-MM-DD)' },
-          include_empty: { type: 'boolean', description: 'Include zero-balance accounts (default: false)' },
+          include_empty: {
+            type: 'boolean',
+            description: 'Include zero-balance accounts (default: false)',
+          },
         },
         required: [],
       },
@@ -131,7 +137,7 @@ export function getAccountingTools(client: HoldedClient) {
         if (args.start_date !== undefined) params.start_date = args.start_date;
         if (args.end_date !== undefined) params.end_date = args.end_date;
         if (args.include_empty !== undefined) params.include_empty = String(args.include_empty);
-        return normalizeV2List(await client.get('/accounting-accounts', params, 'v2'));
+        return normalizeV2List(await client.get('/accounting-accounts', params));
       },
     },
 
@@ -155,37 +161,45 @@ export function getAccountingTools(client: HoldedClient) {
         properties: {
           start_date: {
             type: 'string',
-            description: 'Range start as an ISO 8601 date (YYYY-MM-DD, inclusive). Required unless starttmp is provided.',
+            description:
+              'Range start as an ISO 8601 date (YYYY-MM-DD, inclusive). Required unless starttmp is provided.',
           },
           end_date: {
             type: 'string',
-            description: 'Range end as an ISO 8601 date (YYYY-MM-DD, inclusive). Required unless endtmp is provided.',
+            description:
+              'Range end as an ISO 8601 date (YYYY-MM-DD, inclusive). Required unless endtmp is provided.',
           },
           starttmp: {
             type: 'number',
-            description: 'Range start as a Unix timestamp in seconds (legacy form, converted to ISO). Use start_date when possible.',
+            description:
+              'Range start as a Unix timestamp in seconds (legacy form, converted to ISO). Use start_date when possible.',
           },
           endtmp: {
             type: 'number',
-            description: 'Range end as a Unix timestamp in seconds (legacy form, converted to ISO). Use end_date when possible.',
+            description:
+              'Range end as a Unix timestamp in seconds (legacy form, converted to ISO). Use end_date when possible.',
           },
           groupByEntry: {
             type: 'boolean',
             description:
               'Group lines by entryNumber into full journal entries (each with totalDebit/totalCredit), applied to the current page. Default: false (flat lines)',
           },
-          limit: { type: 'number', description: 'Max items per cursor page (v2 default 50, max 100)' },
-          cursor: { type: 'string', description: 'Cursor token from a previous response nextCursor' },
+          limit: {
+            type: 'number',
+            description: 'Max items per cursor page (v2 default 50, max 100)',
+          },
+          cursor: {
+            type: 'string',
+            description: 'Cursor token from a previous response nextCursor',
+          },
         },
         required: [],
       },
       readOnlyHint: true,
       handler: withValidation(dailyLedgerSchema, async (args) => {
         // Resolve start/end: ISO form takes priority; fall back to Unix→ISO conversion
-        const startDate =
-          args.start_date ?? toIsoDate(args.starttmp as number | undefined);
-        const endDate =
-          args.end_date ?? toIsoDate(args.endtmp as number | undefined);
+        const startDate = args.start_date ?? toIsoDate(args.starttmp as number | undefined);
+        const endDate = args.end_date ?? toIsoDate(args.endtmp as number | undefined);
 
         if (!startDate || !endDate) {
           throw new Error(
@@ -199,7 +213,7 @@ export function getAccountingTools(client: HoldedClient) {
           ...cursorParams({ limit: args.limit, cursor: args.cursor }),
         };
 
-        const response = await client.get('/ledger-entries', params, 'v2');
+        const response = await client.get('/ledger-entries', params);
         const normalized = normalizeV2List(response);
 
         if (args.groupByEntry) {

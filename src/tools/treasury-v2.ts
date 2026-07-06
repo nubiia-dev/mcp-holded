@@ -24,7 +24,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { limit?: number; cursor?: string } = {}) =>
-        normalizeV2List(await client.get('/treasury/accounts', cursorParams(args), 'v2')),
+        normalizeV2List(await client.get('/treasury/accounts', cursorParams(args))),
     },
 
     get_bank_account: {
@@ -36,7 +36,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { accountId: string }) =>
-        client.get(`/treasury/accounts/${args.accountId}`, undefined, 'v2'),
+        client.get(`/treasury/accounts/${args.accountId}`, undefined),
     },
 
     create_bank_account: {
@@ -51,7 +51,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         required: ['data'],
       },
       handler: async (args: { data: Record<string, unknown> }) =>
-        client.post('/treasury/accounts', args.data, 'v2'),
+        client.post('/treasury/accounts', args.data),
     },
 
     update_bank_account: {
@@ -67,7 +67,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         required: ['accountId', 'data'],
       },
       handler: async (args: { accountId: string; data: Record<string, unknown> }) =>
-        client.put(`/treasury/accounts/${args.accountId}`, args.data, 'v2'),
+        client.put(`/treasury/accounts/${args.accountId}`, args.data),
     },
 
     delete_bank_account: {
@@ -79,7 +79,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         required: ['accountId'],
       },
       handler: async (args: { accountId: string }) =>
-        client.delete(`/treasury/accounts/${args.accountId}`, 'v2'),
+        client.delete(`/treasury/accounts/${args.accountId}`),
     },
 
     archive_bank_account: {
@@ -91,7 +91,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         required: ['accountId'],
       },
       handler: async (args: { accountId: string }) =>
-        client.post(`/treasury/accounts/${args.accountId}/archive`, undefined, 'v2'),
+        client.post(`/treasury/accounts/${args.accountId}/archive`, undefined),
     },
 
     list_bank_movements: {
@@ -111,8 +111,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         normalizeV2List(
           await client.get(
             `/treasury/accounts/${args.accountId}/bank-movements`,
-            cursorParams(args),
-            'v2'
+            cursorParams(args)
           )
         ),
     },
@@ -130,7 +129,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         required: ['accountId', 'data'],
       },
       handler: async (args: { accountId: string; data: Record<string, unknown> }) =>
-        client.post(`/treasury/accounts/${args.accountId}/bank-movements`, args.data, 'v2'),
+        client.post(`/treasury/accounts/${args.accountId}/bank-movements`, args.data),
     },
 
     reconcile_bank_movement: {
@@ -153,8 +152,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
       }) =>
         client.post(
           `/treasury/accounts/${args.accountId}/bank-movements/${args.movementId}/reconcile`,
-          args.data,
-          'v2'
+          args.data
         ),
     },
 
@@ -174,8 +172,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         normalizeV2List(
           await client.get(
             `/treasury/accounts/${args.accountId}/cash-movements`,
-            cursorParams(args),
-            'v2'
+            cursorParams(args)
           )
         ),
     },
@@ -193,7 +190,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
       readOnlyHint: true,
       handler: async (args: { limit?: number; cursor?: string } = {}) =>
         normalizeV2List(
-          await client.get('/treasury/cashflow/invoicing-forecasts', cursorParams(args), 'v2')
+          await client.get('/treasury/cashflow/invoicing-forecasts', cursorParams(args))
         ),
     },
 
@@ -206,7 +203,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { forecastId: string }) =>
-        client.get(`/treasury/cashflow/invoicing-forecasts/${args.forecastId}`, undefined, 'v2'),
+        client.get(`/treasury/cashflow/invoicing-forecasts/${args.forecastId}`, undefined),
     },
 
     create_invoicing_forecast: {
@@ -221,7 +218,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         required: ['data'],
       },
       handler: async (args: { data: Record<string, unknown> }) =>
-        client.post('/treasury/cashflow/invoicing-forecasts', args.data, 'v2'),
+        client.post('/treasury/cashflow/invoicing-forecasts', args.data),
     },
 
     update_invoicing_forecast: {
@@ -237,7 +234,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         required: ['forecastId', 'data'],
       },
       handler: async (args: { forecastId: string; data: Record<string, unknown> }) =>
-        client.put(`/treasury/cashflow/invoicing-forecasts/${args.forecastId}`, args.data, 'v2'),
+        client.put(`/treasury/cashflow/invoicing-forecasts/${args.forecastId}`, args.data),
     },
 
     delete_invoicing_forecast: {
@@ -249,7 +246,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
         required: ['forecastId'],
       },
       handler: async (args: { forecastId: string }) =>
-        client.delete(`/treasury/cashflow/invoicing-forecasts/${args.forecastId}`, 'v2'),
+        client.delete(`/treasury/cashflow/invoicing-forecasts/${args.forecastId}`),
     },
   };
 }

@@ -20,8 +20,7 @@ export function getExpensesAccountTools(client: HoldedClient) {
           },
           summary: {
             type: 'boolean',
-            description:
-              'Return only count and pagination metadata without items (default: false)',
+            description: 'Return only count and pagination metadata without items (default: false)',
           },
           fields: {
             type: 'array',
@@ -36,9 +35,7 @@ export function getExpensesAccountTools(client: HoldedClient) {
       handler: async (
         args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const result = normalizeV2List(
-          await client.get('/expenses-accounts', cursorParams(args), 'v2')
-        );
+        const result = normalizeV2List(await client.get('/expenses-accounts', cursorParams(args)));
 
         if (args.fields?.length) {
           result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
@@ -79,7 +76,7 @@ export function getExpensesAccountTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: Record<string, unknown>) => {
-        return client.post('/expenses-accounts', args, 'v2');
+        return client.post('/expenses-accounts', args);
       },
     },
 
@@ -99,7 +96,7 @@ export function getExpensesAccountTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { accountId: string }) => {
-        return client.get(`/expenses-accounts/${args.accountId}`, undefined, 'v2');
+        return client.get(`/expenses-accounts/${args.accountId}`, undefined);
       },
     },
 
@@ -128,7 +125,7 @@ export function getExpensesAccountTools(client: HoldedClient) {
       destructiveHint: true,
       handler: async (args: { accountId: string; [key: string]: unknown }) => {
         const { accountId, ...body } = args;
-        return client.put(`/expenses-accounts/${accountId}`, body, 'v2');
+        return client.put(`/expenses-accounts/${accountId}`, body);
       },
     },
 
@@ -147,7 +144,7 @@ export function getExpensesAccountTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: { accountId: string }) => {
-        return client.delete(`/expenses-accounts/${args.accountId}`, 'v2');
+        return client.delete(`/expenses-accounts/${args.accountId}`);
       },
     },
   };

@@ -47,9 +47,7 @@ export function getContactTools(client: HoldedClient) {
           fields?: string[];
         } = {}
       ) => {
-        const result = normalizeV2List(
-          await client.get('/contacts', cursorParams(args), 'v2')
-        );
+        const result = normalizeV2List(await client.get('/contacts', cursorParams(args)));
 
         if (args.fields?.length) {
           result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
@@ -145,7 +143,7 @@ export function getContactTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createContactSchema, async (args) => {
-        return client.post('/contacts', args, 'v2');
+        return client.post('/contacts', args);
       }),
     },
 
@@ -164,7 +162,7 @@ export function getContactTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(contactIdSchema, async (args) => {
-        return client.get(`/contacts/${args.contactId}`, undefined, 'v2');
+        return client.get(`/contacts/${args.contactId}`, undefined);
       }),
     },
 
@@ -248,7 +246,7 @@ export function getContactTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateContactSchema, async (args) => {
         const { contactId, ...body } = args;
-        return client.put(`/contacts/${contactId}`, body, 'v2');
+        return client.put(`/contacts/${contactId}`, body);
       }),
     },
 
@@ -267,13 +265,14 @@ export function getContactTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(contactIdSchema, async (args) => {
-        return client.delete(`/contacts/${args.contactId}`, 'v2');
+        return client.delete(`/contacts/${args.contactId}`);
       }),
     },
 
     // Get Contact Attachments List
     list_contact_attachments: {
-      description: 'Get list of attachments for a contact (Holded API v2). Use the filenames from the response with get_contact_attachment.',
+      description:
+        'Get list of attachments for a contact (Holded API v2). Use the filenames from the response with get_contact_attachment.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -286,7 +285,7 @@ export function getContactTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(contactIdSchema, async (args) => {
-        return client.get(`/contacts/${args.contactId}/attachments`, undefined, 'v2');
+        return client.get(`/contacts/${args.contactId}/attachments`, undefined);
       }),
     },
 
@@ -312,11 +311,7 @@ export function getContactTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(contactAttachmentSchema, async (args) => {
-        return client.get(
-          `/contacts/${args.contactId}/attachments/${args.filename}`,
-          undefined,
-          'v2'
-        );
+        return client.get(`/contacts/${args.contactId}/attachments/${args.filename}`, undefined);
       }),
     },
   };

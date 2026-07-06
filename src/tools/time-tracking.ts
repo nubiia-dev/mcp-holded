@@ -117,7 +117,7 @@ export function getTimeTrackingTools(client: HoldedClient) {
       handler: withValidation(listProjectTimesSchema, async (args) => {
         const { startDate, endDate, approvedOnly, limit, cursor } = args;
         const params = cursorParams({ limit, cursor });
-        const raw = await client.get('/project-times', params, 'v2');
+        const raw = await client.get('/project-times', params);
         const normalized = normalizeV2List(raw);
         if (startDate || endDate || approvedOnly) {
           const filteredItems = normalized.items.filter((item) =>
@@ -171,7 +171,7 @@ export function getTimeTrackingTools(client: HoldedClient) {
       handler: withValidation(projectTimesSchema, async (args) => {
         const { projectId, startDate, endDate, approvedOnly, limit, cursor } = args;
         const params = cursorParams({ limit, cursor });
-        const raw = await client.get(`/projects/${projectId}/times`, params, 'v2');
+        const raw = await client.get(`/projects/${projectId}/times`, params);
         const normalized = normalizeV2List(raw);
         if (startDate || endDate || approvedOnly) {
           const filteredItems = normalized.items.filter((item) =>
@@ -203,11 +203,7 @@ export function getTimeTrackingTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(projectTimeIdSchema, async (args) => {
-        return client.get(
-          `/projects/${args.projectId}/times/${args.timeTrackingId}`,
-          undefined,
-          'v2'
-        );
+        return client.get(`/projects/${args.projectId}/times/${args.timeTrackingId}`, undefined);
       }),
     },
   };

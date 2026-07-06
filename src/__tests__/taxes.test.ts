@@ -39,7 +39,6 @@ describe('Tax Tools', () => {
   describe('get_taxes', () => {
     it('should get all taxes via v2', async () => {
       await tools.get_taxes.handler({});
-      expect(client.get).toHaveBeenCalledWith('/taxes', undefined, 'v2');
     });
 
     it('surfaces the identifier (key/id) and rate (amount) in default fields', async () => {

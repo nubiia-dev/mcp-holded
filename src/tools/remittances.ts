@@ -20,8 +20,7 @@ export function getRemittanceTools(client: HoldedClient) {
           },
           summary: {
             type: 'boolean',
-            description:
-              'Return only count and pagination metadata without items (default: false)',
+            description: 'Return only count and pagination metadata without items (default: false)',
           },
           fields: {
             type: 'array',
@@ -37,7 +36,7 @@ export function getRemittanceTools(client: HoldedClient) {
         args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
         const result = normalizeV2List(
-          await client.get('/treasury/remittances', cursorParams(args), 'v2')
+          await client.get('/treasury/remittances', cursorParams(args))
         );
 
         if (args.fields?.length) {
@@ -75,7 +74,7 @@ export function getRemittanceTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { remittanceId: string }) => {
-        return client.get(`/treasury/remittances/${args.remittanceId}`, undefined, 'v2');
+        return client.get(`/treasury/remittances/${args.remittanceId}`, undefined);
       },
     },
   };

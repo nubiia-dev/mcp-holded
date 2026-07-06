@@ -2,66 +2,30 @@ import fetch, { RequestInit } from 'node-fetch';
 import FormData from 'form-data';
 
 /**
- * Holded exposes several independent REST APIs, each under its own base path.
- * Tools select which one they target via the `apiGroup` parameter.
- *
- * - `invoicing` — documents, contacts, products, treasury, etc. (the default,
- *   for backward compatibility with every existing tool).
- * - `projects` — projects and time tracking
- *   (`/projects/times`, `/projects/{id}/times/...`).
- * - `accounting` — the (read-only) accounting layer: chart of accounts and the
- *   daily ledger / journal (`/chartofaccounts`, `/dailyledger`).
- * - `internal` — Holded's UNDOCUMENTED internal API (note: no `/v1` segment).
- *   Currently used only for bank-feed reconciliation (`/internal/banking/...`).
- *   These endpoints are NOT part of the public contract and may change or break
- *   without notice; treat tools built on them as experimental and unverified.
- * - `v2` — Holded API v2 (GA June 2026): unified base URL, Bearer auth with scoped
- *   keys, cursor pagination. Used only for modules v1 does not cover
- *   (Team/HR, ledger writes, official treasury). Requires a separate key.
+ * Holded API v2 base URL.
+ * All endpoints use Bearer auth with a scoped key (pat_… / sk_live_…).
  */
-const API_BASES = {
-  invoicing: 'https://api.holded.com/api/invoicing/v1',
-  projects: 'https://api.holded.com/api/projects/v1',
-  accounting: 'https://api.holded.com/api/accounting/v1',
-  internal: 'https://api.holded.com/api',
-  v2: 'https://api.holded.com/api/v2',
-} as const;
-
-export type ApiGroup = keyof typeof API_BASES;
-
-const DEFAULT_API_GROUP: ApiGroup = 'invoicing';
+const API_BASE = 'https://api.holded.com/api/v2';
 
 export class HoldedClient {
   private apiKey: string;
-  private apiKeyV2?: string;
   private maxRetries = 3;
   private backoffDelays = [1000, 2000, 4000]; // milliseconds
   private retryableStatusCodes = new Set([429, 502, 503, 504]);
 
-  constructor(apiKey: string, apiKeyV2?: string) {
-    this.apiKey = apiKey;
-    this.apiKeyV2 = apiKeyV2;
-  }
-
-  hasV2(): boolean {
-    return Boolean(this.apiKeyV2);
-  }
-
-  private buildHeaders(apiGroup: ApiGroup): Record<string, string> {
-    if (apiGroup === 'v2') {
-      if (!this.apiKeyV2) {
-        throw new Error(
-          'Holded API v2 key not configured. Set HOLDED_API_KEY_V2 (or TENANT_N_API_KEY_V2 in multi-tenant mode) ' +
-            'with an sk_live_… key generated in Holded → Settings → API with the scopes this tool needs.'
-        );
-      }
-      return {
-        Authorization: `Bearer ${this.apiKeyV2}`,
-        'Content-Type': 'application/json',
-      };
+  constructor(apiKey: string) {
+    if (!apiKey) {
+      throw new Error(
+        'Holded API key not configured. Set HOLDED_API_KEY_V2 (or HOLDED_API_KEY as fallback) ' +
+          'with a v2 key (pat_… or sk_live_…) generated in Holded → Settings → API.'
+      );
     }
+    this.apiKey = apiKey;
+  }
+
+  private buildHeaders(): Record<string, string> {
     return {
-      key: this.apiKey,
+      Authorization: `Bearer ${this.apiKey}`,
       'Content-Type': 'application/json',
     };
   }
@@ -74,10 +38,9 @@ export class HoldedClient {
     method: string,
     endpoint: string,
     body?: unknown,
-    queryParams?: Record<string, string | number>,
-    apiGroup: ApiGroup = DEFAULT_API_GROUP
+    queryParams?: Record<string, string | number>
   ): Promise<T> {
-    let url = `${API_BASES[apiGroup]}${endpoint}`;
+    let url = `${API_BASE}${endpoint}`;
 
     if (queryParams) {
       const params = new URLSearchParams();
@@ -92,7 +55,7 @@ export class HoldedClient {
       }
     }
 
-    const headers = this.buildHeaders(apiGroup);
+    const headers = this.buildHeaders();
 
     const options: RequestInit = {
       method,
@@ -129,9 +92,9 @@ export class HoldedClient {
         if (!response.ok) {
           const errorText = await response.text();
           let message = `Holded API error (${response.status}): ${errorText}`;
-          if (response.status === 403 && apiGroup === 'v2') {
+          if (response.status === 403) {
             message +=
-              ' — the v2 API key may be missing the scope this endpoint requires (e.g. accounting:payrolls.read). Check the key permissions in Holded → Settings → API.';
+              ' — the API key may be missing the scope this endpoint requires (e.g. accounting:payrolls.read). Check the key permissions in Holded → Settings → API.';
           }
           throw new Error(message);
         }
@@ -171,53 +134,30 @@ export class HoldedClient {
     throw lastError || new Error('Request failed after retries');
   }
 
-  async get<T>(
-    endpoint: string,
-    queryParams?: Record<string, string | number>,
-    apiGroup: ApiGroup = DEFAULT_API_GROUP
-  ): Promise<T> {
-    return this.request<T>('GET', endpoint, undefined, queryParams, apiGroup);
+  async get<T>(endpoint: string, queryParams?: Record<string, string | number>): Promise<T> {
+    return this.request<T>('GET', endpoint, undefined, queryParams);
   }
 
-  async post<T>(
-    endpoint: string,
-    body?: unknown,
-    apiGroup: ApiGroup = DEFAULT_API_GROUP
-  ): Promise<T> {
-    return this.request<T>('POST', endpoint, body, undefined, apiGroup);
+  async post<T>(endpoint: string, body?: unknown): Promise<T> {
+    return this.request<T>('POST', endpoint, body, undefined);
   }
 
-  async put<T>(
-    endpoint: string,
-    body?: unknown,
-    apiGroup: ApiGroup = DEFAULT_API_GROUP
-  ): Promise<T> {
-    return this.request<T>('PUT', endpoint, body, undefined, apiGroup);
+  async put<T>(endpoint: string, body?: unknown): Promise<T> {
+    return this.request<T>('PUT', endpoint, body, undefined);
   }
 
-  async patch<T>(
-    endpoint: string,
-    body?: unknown,
-    apiGroup: ApiGroup = DEFAULT_API_GROUP
-  ): Promise<T> {
-    return this.request<T>('PATCH', endpoint, body, undefined, apiGroup);
+  async patch<T>(endpoint: string, body?: unknown): Promise<T> {
+    return this.request<T>('PATCH', endpoint, body, undefined);
   }
 
-  async delete<T>(endpoint: string, apiGroup: ApiGroup = DEFAULT_API_GROUP): Promise<T> {
-    return this.request<T>('DELETE', endpoint, undefined, undefined, apiGroup);
+  async delete<T>(endpoint: string): Promise<T> {
+    return this.request<T>('DELETE', endpoint, undefined, undefined);
   }
 
   // File upload for attachments with retry logic.
-  // apiGroup selects the base URL and auth headers; pass 'v2' for Holded API v2
-  // multipart uploads (Content-Type is omitted from buildHeaders output and set
-  // automatically by FormData so the boundary is included correctly).
-  async uploadFile(
-    endpoint: string,
-    file: Buffer,
-    filename: string,
-    apiGroup: ApiGroup = DEFAULT_API_GROUP
-  ): Promise<unknown> {
-    const url = `${API_BASES[apiGroup]}${endpoint}`;
+  // Content-Type is omitted and set automatically by FormData so the boundary is included correctly.
+  async uploadFile(endpoint: string, file: Buffer, filename: string): Promise<unknown> {
+    const url = `${API_BASE}${endpoint}`;
     let lastError: Error | null = null;
 
     // Retry loop with exponential backoff
@@ -227,7 +167,7 @@ export class HoldedClient {
         formData.append('file', file, filename);
 
         // Use buildHeaders for auth, then drop Content-Type (FormData sets its own with boundary)
-        const authHeaders = { ...this.buildHeaders(apiGroup) };
+        const authHeaders = { ...this.buildHeaders() };
         delete authHeaders['Content-Type'];
 
         const response = await fetch(url, {

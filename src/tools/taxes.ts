@@ -24,10 +24,8 @@ export function getTaxTools(client: HoldedClient) {
         required: [],
       },
       readOnlyHint: true,
-      handler: async (
-        args: { summary?: boolean; fields?: string[] } = {}
-      ) => {
-        const v2Response = await client.get('/taxes', undefined, 'v2');
+      handler: async (args: { summary?: boolean; fields?: string[] } = {}) => {
+        const v2Response = await client.get('/taxes', undefined);
         const normalized = normalizeV2List(v2Response);
         const taxes = normalized.items as Array<Record<string, unknown>>;
 

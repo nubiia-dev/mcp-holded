@@ -100,15 +100,28 @@ function unsupportedOp(operation: string, docType: string): never {
  * Document types that support pay_document in v2.
  * Source: annex tables 1.1–1.11 (pay column).
  */
-const PAYABLE_DOC_TYPES = new Set(['invoice', 'salesreceipt', 'creditnote', 'receiptnote', 'purchase']);
+const PAYABLE_DOC_TYPES = new Set([
+  'invoice',
+  'salesreceipt',
+  'creditnote',
+  'receiptnote',
+  'purchase',
+]);
 
 /**
  * Document types that support send_document in v2.
  * purchase → NO EQUIVALENT (table 1.9); purchaserefund → entirely unsupported.
  */
 const SENDABLE_DOC_TYPES = new Set([
-  'invoice', 'salesreceipt', 'creditnote', 'receiptnote',
-  'estimate', 'proform', 'salesorder', 'waybill', 'purchaseorder',
+  'invoice',
+  'salesreceipt',
+  'creditnote',
+  'receiptnote',
+  'estimate',
+  'proform',
+  'salesorder',
+  'waybill',
+  'purchaseorder',
 ]);
 
 /**
@@ -116,8 +129,15 @@ const SENDABLE_DOC_TYPES = new Set([
  * purchase → NO EQUIVALENT (table 1.9); purchaserefund → entirely unsupported.
  */
 const PDF_DOC_TYPES = new Set([
-  'invoice', 'salesreceipt', 'creditnote', 'receiptnote',
-  'estimate', 'proform', 'salesorder', 'waybill', 'purchaseorder',
+  'invoice',
+  'salesreceipt',
+  'creditnote',
+  'receiptnote',
+  'estimate',
+  'proform',
+  'salesorder',
+  'waybill',
+  'purchaseorder',
 ]);
 
 /**
@@ -184,7 +204,7 @@ export function getDocumentTools(client: HoldedClient) {
         fields?: string[];
       }) => {
         const base = docBase(args.docType); // throws for purchaserefund
-        const result = normalizeV2List(await client.get(base, cursorParams(args), 'v2'));
+        const result = normalizeV2List(await client.get(base, cursorParams(args)));
 
         // Field filtering
         if (args.fields?.length) {
@@ -312,9 +332,8 @@ export function getDocumentTools(client: HoldedClient) {
         const { docType, approveDoc, ...rest } = args;
         const body = { ...rest, approveDoc: approveDoc ?? true };
         // purchaserefund has a dedicated v2 endpoint; all others use their resource base path.
-        const postPath =
-          docType === 'purchaserefund' ? '/purchases/refund' : docBase(docType);
-        const result = (await client.post(postPath, body, 'v2')) as Record<string, unknown>;
+        const postPath = docType === 'purchaserefund' ? '/purchases/refund' : docBase(docType);
+        const result = (await client.post(postPath, body)) as Record<string, unknown>;
         const warnings: string[] = [];
         // #17 — on sales documents a numbering series may override the requested
         // invoiceNum. Re-read the created document to confirm what actually stuck.
@@ -324,8 +343,7 @@ export function getDocumentTools(client: HoldedClient) {
             try {
               const created = (await client.get(
                 `${docBase(docType)}/${newId}`,
-                undefined,
-                'v2'
+                undefined
               )) as Record<string, unknown>;
               const persisted = created?.invoiceNum ?? created?.docNumber;
               if (persisted !== undefined && persisted !== body.invoiceNum) {
@@ -374,14 +392,14 @@ export function getDocumentTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(documentIdSchema, async (args) => {
-        return client.get(`${docBase(args.docType)}/${args.documentId}`, undefined, 'v2');
+        return client.get(`${docBase(args.docType)}/${args.documentId}`, undefined);
       }),
     },
 
     // Get Document Payments (cross-year)
     get_document_payments: {
       description:
-        "Get the payments registered against a specific document via the Holded API v2 GET endpoint. Returns `{ documentId, paymentsDetail }` when the v2 response includes a `paymentsDetail` field; otherwise returns the whole document (v2 field name may differ from v1). Unlike list_payments — which is filtered to the ACTIVE fiscal year — this surfaces payments from ANY year, so use it for cross-year payment audits. Read-only.",
+        'Get the payments registered against a specific document via the Holded API v2 GET endpoint. Returns `{ documentId, paymentsDetail }` when the v2 response includes a `paymentsDetail` field; otherwise returns the whole document (v2 field name may differ from v1). Unlike list_payments — which is filtered to the ACTIVE fiscal year — this surfaces payments from ANY year, so use it for cross-year payment audits. Read-only.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -413,8 +431,7 @@ export function getDocumentTools(client: HoldedClient) {
       handler: withValidation(documentIdSchema, async (args) => {
         const doc = (await client.get(
           `${docBase(args.docType)}/${args.documentId}`,
-          undefined,
-          'v2'
+          undefined
         )) as Record<string, unknown>;
         // Return payments-related field if present; otherwise pass through whole document
         // (v2 field name may differ from v1 `paymentsDetail`).
@@ -529,11 +546,10 @@ export function getDocumentTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateDocumentSchema, async (args) => {
         const { docType, documentId, ...body } = args;
-        const result = (await client.put(
-          `${docBase(docType)}/${documentId}`,
-          body,
-          'v2'
-        )) as Record<string, unknown>;
+        const result = (await client.put(`${docBase(docType)}/${documentId}`, body)) as Record<
+          string,
+          unknown
+        >;
         const warnings: string[] = [];
         // #12 — Holded ignores `currency`/`currencyChange` on PUT; the document
         // keeps its original currency. Re-GET to confirm and warn if it didn't
@@ -542,8 +558,7 @@ export function getDocumentTools(client: HoldedClient) {
           try {
             const current = (await client.get(
               `${docBase(docType)}/${documentId}`,
-              undefined,
-              'v2'
+              undefined
             )) as Record<string, unknown>;
             const persisted = current?.currency;
             if (persisted !== undefined && persisted !== body.currency) {
@@ -595,7 +610,7 @@ export function getDocumentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(documentIdSchema, async (args) => {
-        return client.delete(`${docBase(args.docType)}/${args.documentId}`, 'v2');
+        return client.delete(`${docBase(args.docType)}/${args.documentId}`);
       }),
     },
 
@@ -659,11 +674,10 @@ export function getDocumentTools(client: HoldedClient) {
           unsupportedOp('pay_document', docType);
         }
         const base = docBase(docType);
-        const result = (await client.post(
-          `${base}/${documentId}/payments`,
-          payBody,
-          'v2'
-        )) as Record<string, unknown>;
+        const result = (await client.post(`${base}/${documentId}/payments`, payBody)) as Record<
+          string,
+          unknown
+        >;
         // #10 — paying may auto-approve the document; surface that clearly.
         const warnings: string[] = [
           'If the document was not yet approved, registering this payment auto-approved it (status 0→1). Holded has no API to approve without payment or to un-approve afterwards.',
@@ -672,13 +686,13 @@ export function getDocumentTools(client: HoldedClient) {
         // the document's paymentsDetail (v2 GET), then PUT /payments/{id} with bankId.
         if (bankId) {
           try {
-            const doc = (await client.get(`${base}/${documentId}`, undefined, 'v2')) as {
+            const doc = (await client.get(`${base}/${documentId}`, undefined)) as {
               paymentsDetail?: Array<{ id?: string }>;
             };
             const payments = Array.isArray(doc?.paymentsDetail) ? doc.paymentsDetail : [];
             const newest = payments[payments.length - 1];
             if (newest?.id) {
-              await client.put(`/payments/${newest.id}`, { bankId }, 'v2');
+              await client.put(`/payments/${newest.id}`, { bankId });
               warnings.push(`Linked bank account ${bankId} to payment ${newest.id}.`);
             } else {
               warnings.push(
@@ -745,7 +759,7 @@ export function getDocumentTools(client: HoldedClient) {
         if (!SENDABLE_DOC_TYPES.has(docType)) {
           unsupportedOp('send_document', docType);
         }
-        return client.post(`${docBase(docType)}/${documentId}/send`, body, 'v2');
+        return client.post(`${docBase(docType)}/${documentId}/send`, body);
       }),
     },
 
@@ -785,7 +799,7 @@ export function getDocumentTools(client: HoldedClient) {
         if (!PDF_DOC_TYPES.has(args.docType)) {
           unsupportedOp('get_document_pdf', args.docType);
         }
-        return client.get(`${docBase(args.docType)}/${args.documentId}/pdf`, undefined, 'v2');
+        return client.get(`${docBase(args.docType)}/${args.documentId}/pdf`, undefined);
       }),
     },
 
@@ -824,11 +838,11 @@ export function getDocumentTools(client: HoldedClient) {
       handler: withValidation(documentIdSchema, async (args) => {
         const { docType, documentId } = args;
         if (docType === 'salesorder') {
-          return client.post(`/sales-orders/${documentId}/ship`, undefined, 'v2');
+          return client.post(`/sales-orders/${documentId}/ship`, undefined);
         }
         if (docType === 'purchaseorder') {
           // v2 renames "ship" to "receive" for purchase orders (from supplier POV)
-          return client.post(`/purchase-orders/${documentId}/receive`, undefined, 'v2');
+          return client.post(`/purchase-orders/${documentId}/receive`, undefined);
         }
         unsupportedOp('ship_all_items', docType);
       }),
@@ -881,7 +895,7 @@ export function getDocumentTools(client: HoldedClient) {
         const { docType, documentId, lines } = args;
         if (docType === 'salesorder') {
           // v2 has a dedicated ship-by-lines endpoint (v1 used same /ship with a `lines` body)
-          return client.post(`/sales-orders/${documentId}/ship-by-lines`, { lines }, 'v2');
+          return client.post(`/sales-orders/${documentId}/ship-by-lines`, { lines });
         }
         // purchaseorder receive-by-lines is UNVERIFIED in v2 → unsupported
         unsupportedOp('ship_items_by_line', docType);
@@ -923,10 +937,10 @@ export function getDocumentTools(client: HoldedClient) {
       handler: withValidation(documentIdSchema, async (args) => {
         const { docType, documentId } = args;
         if (docType === 'salesorder') {
-          return client.get(`/sales-orders/${documentId}/shipped-items`, undefined, 'v2');
+          return client.get(`/sales-orders/${documentId}/shipped-items`, undefined);
         }
         if (docType === 'purchaseorder') {
-          return client.get(`/purchase-orders/${documentId}/received-items`, undefined, 'v2');
+          return client.get(`/purchase-orders/${documentId}/received-items`, undefined);
         }
         unsupportedOp('get_shipped_units', docType);
       }),
@@ -978,8 +992,7 @@ export function getDocumentTools(client: HoldedClient) {
         return client.uploadFile(
           `${docBase(args.docType)}/${args.documentId}/attachments`,
           buffer,
-          args.filename,
-          'v2'
+          args.filename
         );
       }),
     },
@@ -1030,7 +1043,7 @@ export function getDocumentTools(client: HoldedClient) {
           unsupportedOp('update_document_tracking', docType);
         }
         // v2 changes the verb from POST to PUT (annex tables 1.7 and 1.8)
-        return client.put(`${docBase(docType)}/${documentId}/tracking`, body, 'v2');
+        return client.put(`${docBase(docType)}/${documentId}/tracking`, body);
       }),
     },
 
@@ -1077,11 +1090,10 @@ export function getDocumentTools(client: HoldedClient) {
       handler: withValidation(updateDocumentPipelineSchema, async (args) => {
         // docBase throws for purchaserefund (no v2 pipeline support there)
         // v2 changes the verb from POST to PUT (annex table 2.2)
-        return client.put(
-          `${docBase(args.docType)}/${args.documentId}/pipeline`,
-          { pipelineId: args.pipelineId, stageId: args.stageId },
-          'v2'
-        );
+        return client.put(`${docBase(args.docType)}/${args.documentId}/pipeline`, {
+          pipelineId: args.pipelineId,
+          stageId: args.stageId,
+        });
       }),
     },
 
@@ -1098,11 +1110,15 @@ export function getDocumentTools(client: HoldedClient) {
       handler: async () => {
         const response = await client.get<{ items?: unknown[] } | unknown[]>(
           '/payment-methods',
-          undefined,
-          'v2'
+          undefined
         );
         // v2 returns {items:[...]} envelope; normalize to bare array for consistency
-        if (response && !Array.isArray(response) && typeof response === 'object' && 'items' in response) {
+        if (
+          response &&
+          !Array.isArray(response) &&
+          typeof response === 'object' &&
+          'items' in response
+        ) {
           return (response as { items: unknown[] }).items;
         }
         return response;

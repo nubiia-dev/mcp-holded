@@ -12,7 +12,7 @@ export function getPaymentTools(client: HoldedClient) {
     // List Payments
     list_payments: {
       description:
-        'List all payments (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma. NOTE: this endpoint is filtered to the ACTIVE fiscal year, so payments made in a prior year do NOT appear here even if they are linked to documents. For cross-year payment audits, read a document\'s payments via get_document_payments (the document `paymentsDetail`). Date filter params (starttmp/endtmp) are forwarded as-is; date filter params pending live verification.',
+        "List all payments (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma. NOTE: this endpoint is filtered to the ACTIVE fiscal year, so payments made in a prior year do NOT appear here even if they are linked to documents. For cross-year payment audits, read a document's payments via get_document_payments (the document `paymentsDetail`). Date filter params (starttmp/endtmp) are forwarded as-is; date filter params pending live verification.",
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -36,11 +36,13 @@ export function getPaymentTools(client: HoldedClient) {
           },
           starttmp: {
             type: 'string',
-            description: 'Starting timestamp (Unix timestamp) for filtering payments by date (pending live verification)',
+            description:
+              'Starting timestamp (Unix timestamp) for filtering payments by date (pending live verification)',
           },
           endtmp: {
             type: 'string',
-            description: 'Ending timestamp (Unix timestamp) for filtering payments by date (pending live verification)',
+            description:
+              'Ending timestamp (Unix timestamp) for filtering payments by date (pending live verification)',
           },
         },
         required: [],
@@ -66,7 +68,7 @@ export function getPaymentTools(client: HoldedClient) {
         }
         if (args.endtmp) params.endtmp = args.endtmp;
 
-        const result = normalizeV2List(await client.get('/payments', params, 'v2'));
+        const result = normalizeV2List(await client.get('/payments', params));
 
         if (args.fields?.length) {
           result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
@@ -106,7 +108,7 @@ export function getPaymentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createPaymentSchema, async (args) => {
-        return client.post('/payments', args, 'v2');
+        return client.post('/payments', args);
       }),
     },
 
@@ -125,7 +127,7 @@ export function getPaymentTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(paymentIdSchema, async (args) => {
-        return client.get(`/payments/${args.paymentId}`, undefined, 'v2');
+        return client.get(`/payments/${args.paymentId}`, undefined);
       }),
     },
 
@@ -174,7 +176,7 @@ export function getPaymentTools(client: HoldedClient) {
         // changes over the current payment so unspecified fields aren't blanked.
         let base: Record<string, unknown> = {};
         try {
-          const current = await client.get(`/payments/${paymentId}`, undefined, 'v2');
+          const current = await client.get(`/payments/${paymentId}`, undefined);
           if (current && typeof current === 'object' && !Array.isArray(current)) {
             base = { ...(current as Record<string, unknown>) };
             delete base.id;
@@ -182,7 +184,7 @@ export function getPaymentTools(client: HoldedClient) {
         } catch {
           // If the current payment can't be fetched, fall back to a plain update.
         }
-        return client.put(`/payments/${paymentId}`, { ...base, ...updates }, 'v2');
+        return client.put(`/payments/${paymentId}`, { ...base, ...updates });
       }),
     },
 
@@ -201,7 +203,7 @@ export function getPaymentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(paymentIdSchema, async (args) => {
-        return client.delete(`/payments/${args.paymentId}`, 'v2');
+        return client.delete(`/payments/${args.paymentId}`);
       }),
     },
   };

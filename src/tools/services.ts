@@ -41,7 +41,7 @@ export function getServiceTools(client: HoldedClient) {
       handler: async (
         args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const result = normalizeV2List(await client.get('/services', cursorParams(args), 'v2'));
+        const result = normalizeV2List(await client.get('/services', cursorParams(args)));
 
         if (args.fields?.length) {
           result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
@@ -93,7 +93,7 @@ export function getServiceTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createServiceSchema, async (args) => {
-        return client.post('/services', args, 'v2');
+        return client.post('/services', args);
       }),
     },
 
@@ -112,7 +112,7 @@ export function getServiceTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(serviceIdSchema, async (args) => {
-        return client.get(`/services/${args.serviceId}`, undefined, 'v2');
+        return client.get(`/services/${args.serviceId}`, undefined);
       }),
     },
 
@@ -152,7 +152,7 @@ export function getServiceTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateServiceSchema, async (args) => {
         const { serviceId, ...body } = args;
-        return client.put(`/services/${serviceId}`, body, 'v2');
+        return client.put(`/services/${serviceId}`, body);
       }),
     },
 
@@ -171,7 +171,7 @@ export function getServiceTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(serviceIdSchema, async (args) => {
-        return client.delete(`/services/${args.serviceId}`, 'v2');
+        return client.delete(`/services/${args.serviceId}`);
       }),
     },
   };

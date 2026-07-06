@@ -34,7 +34,7 @@ export function getLedgerTools(client: HoldedClient) {
         const params: Record<string, string | number> = { ...cursorParams(args) };
         if (args.start_date !== undefined) params.start_date = args.start_date;
         if (args.end_date !== undefined) params.end_date = args.end_date;
-        return normalizeV2List(await client.get('/ledger-entries', params, 'v2'));
+        return normalizeV2List(await client.get('/ledger-entries', params));
       },
     },
 
@@ -50,7 +50,7 @@ export function getLedgerTools(client: HoldedClient) {
         required: ['data'],
       },
       handler: async (args: { data: Record<string, unknown> }) =>
-        client.post('/ledger-entries', args.data, 'v2'),
+        client.post('/ledger-entries', args.data),
     },
 
     list_accounting_accounts: {
@@ -66,7 +66,7 @@ export function getLedgerTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { limit?: number; cursor?: string } = {}) =>
-        normalizeV2List(await client.get('/accounting-accounts', cursorParams(args), 'v2')),
+        normalizeV2List(await client.get('/accounting-accounts', cursorParams(args))),
     },
 
     create_accounting_account: {
@@ -81,7 +81,7 @@ export function getLedgerTools(client: HoldedClient) {
         required: ['data'],
       },
       handler: async (args: { data: Record<string, unknown> }) =>
-        client.post('/accounting-accounts', args.data, 'v2'),
+        client.post('/accounting-accounts', args.data),
     },
   };
 }

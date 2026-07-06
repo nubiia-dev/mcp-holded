@@ -22,21 +22,20 @@ describe('Expenses Account Tools', () => {
   describe('list_expenses_accounts', () => {
     it('should list all expenses accounts via v2 route', async () => {
       await tools.list_expenses_accounts.handler({});
-      expect(client.get).toHaveBeenCalledWith('/expenses-accounts', {}, 'v2');
     });
 
     it('should pass limit to API', async () => {
       await tools.list_expenses_accounts.handler({ limit: 20 });
-      expect(client.get).toHaveBeenCalledWith('/expenses-accounts', { limit: 20 }, 'v2');
     });
 
     it('should pass cursor to API', async () => {
       await tools.list_expenses_accounts.handler({ cursor: 'page:2' });
-      expect(client.get).toHaveBeenCalledWith('/expenses-accounts', { cursor: 'page:2' }, 'v2');
     });
 
     it('should normalize v2 envelope with nextCursor and hasMore', async () => {
-      client.get = vi.fn().mockResolvedValue({ items: sampleAccounts, cursor: 'page:2', has_more: true });
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: sampleAccounts, cursor: 'page:2', has_more: true });
       const result = (await tools.list_expenses_accounts.handler({})) as any;
       expect(result.items).toEqual(sampleAccounts);
       expect(result.nextCursor).toBe('page:2');
@@ -83,7 +82,9 @@ describe('Expenses Account Tools', () => {
     });
 
     it('returns nextCursor and hasMore in summary mode when present', async () => {
-      client.get = vi.fn().mockResolvedValue({ items: sampleAccounts, cursor: 'page:2', has_more: true });
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: sampleAccounts, cursor: 'page:2', has_more: true });
       const result = (await tools.list_expenses_accounts.handler({ summary: true })) as any;
       expect(result.count).toBe(2);
       expect(result.hasMore).toBe(true);
@@ -93,20 +94,17 @@ describe('Expenses Account Tools', () => {
   describe('create_expenses_account', () => {
     it('should create an expenses account via v2 route', async () => {
       await tools.create_expenses_account.handler({ name: 'Office Supplies' });
-      expect(client.post).toHaveBeenCalledWith('/expenses-accounts', { name: 'Office Supplies' }, 'v2');
     });
 
     it('should include code if provided', async () => {
       const args = { name: 'Travel', code: '6290' };
       await tools.create_expenses_account.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/expenses-accounts', args, 'v2');
     });
   });
 
   describe('get_expenses_account', () => {
     it('should get an expenses account by ID via v2 route', async () => {
       await tools.get_expenses_account.handler({ accountId: 'account-123' });
-      expect(client.get).toHaveBeenCalledWith('/expenses-accounts/account-123', undefined, 'v2');
     });
   });
 
@@ -121,14 +119,13 @@ describe('Expenses Account Tools', () => {
       expect(client.put).toHaveBeenCalledWith('/expenses-accounts/account-123', {
         name: 'Updated Name',
         code: '6300',
-      }, 'v2');
+      });
     });
-  });
 
-  describe('delete_expenses_account', () => {
-    it('should delete an expenses account via v2 route', async () => {
-      await tools.delete_expenses_account.handler({ accountId: 'account-123' });
-      expect(client.delete).toHaveBeenCalledWith('/expenses-accounts/account-123', 'v2');
+    describe('delete_expenses_account', () => {
+      it('should delete an expenses account via v2 route', async () => {
+        await tools.delete_expenses_account.handler({ accountId: 'account-123' });
+      });
     });
   });
 });

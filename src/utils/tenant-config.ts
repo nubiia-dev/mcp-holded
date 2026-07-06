@@ -5,15 +5,17 @@ import { TenantConfig } from './tenant-context.js';
  *
  * Supports two modes:
  *
- * 1. Single tenant (legacy mode):
- *    - HOLDED_API_KEY=xxx
+ * 1. Single tenant mode:
+ *    - HOLDED_API_KEY_V2=pat_… (preferred)
+ *    - HOLDED_API_KEY=pat_…    (fallback alias)
  *
  * 2. Multi-tenant mode:
  *    - TENANT_1_NAME=Acme Corp
- *    - TENANT_1_API_KEY=xxx
+ *    - TENANT_1_API_KEY_V2=pat_… (preferred)
+ *    - TENANT_1_API_KEY=pat_…    (fallback alias)
  *    - TENANT_1_ENABLED=true
  *    - TENANT_2_NAME=Beta Inc
- *    - TENANT_2_API_KEY=yyy
+ *    - TENANT_2_API_KEY_V2=pat_…
  *    - TENANT_2_ENABLED=true
  *
  * The loader will automatically detect which mode to use based on available env vars.
@@ -36,9 +38,8 @@ export function loadTenantConfigs(): TenantConfig[] {
     // Multi-tenant mode
     for (const id of tenantIds) {
       const name = process.env[`TENANT_${id}_NAME`];
-      const apiKey = process.env[`TENANT_${id}_API_KEY`];
+      const apiKey = process.env[`TENANT_${id}_API_KEY_V2`] || process.env[`TENANT_${id}_API_KEY`];
       const enabledStr = process.env[`TENANT_${id}_ENABLED`];
-      const apiKeyV2 = process.env[`TENANT_${id}_API_KEY_V2`] || undefined;
 
       if (!name || !apiKey) {
         console.error(
@@ -53,7 +54,6 @@ export function loadTenantConfigs(): TenantConfig[] {
         id: `tenant_${id}`,
         name,
         apiKey,
-        apiKeyV2,
         enabled,
         metadata: {
           source: 'environment',
@@ -66,15 +66,13 @@ export function loadTenantConfigs(): TenantConfig[] {
     return configs;
   }
 
-  // Single tenant mode (legacy)
-  const apiKey = process.env.HOLDED_API_KEY;
+  // Single tenant mode
+  const apiKey = process.env.HOLDED_API_KEY_V2 || process.env.HOLDED_API_KEY;
   if (apiKey) {
-    const apiKeyV2 = process.env.HOLDED_API_KEY_V2 || undefined;
     configs.push({
       id: 'default',
       name: 'Default Organization',
       apiKey,
-      apiKeyV2,
       enabled: true,
       metadata: {
         source: 'environment',
@@ -82,7 +80,7 @@ export function loadTenantConfigs(): TenantConfig[] {
       },
     });
 
-    console.error('Running in single-tenant mode (legacy)');
+    console.error('Running in single-tenant mode');
     return configs;
   }
 
@@ -97,8 +95,9 @@ export function validateTenantConfigs(configs: TenantConfig[]): void {
   if (configs.length === 0) {
     throw new Error(
       'No tenant configuration found. Please set either:\n' +
-        '  - HOLDED_API_KEY for single-tenant mode, or\n' +
-        '  - TENANT_1_NAME and TENANT_1_API_KEY for multi-tenant mode'
+        '  - HOLDED_API_KEY_V2 (or HOLDED_API_KEY) for single-tenant mode, or\n' +
+        '  - TENANT_1_NAME and TENANT_1_API_KEY_V2 (or TENANT_1_API_KEY) for multi-tenant mode.\n' +
+        'The key must be a v2 key (pat_… or sk_live_…) generated in Holded → Settings → API.'
     );
   }
 

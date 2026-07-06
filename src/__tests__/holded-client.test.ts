@@ -21,8 +21,23 @@ describe('HoldedClient', () => {
     vi.restoreAllMocks();
   });
 
+  describe('constructor', () => {
+    it('throws when the api key is empty', () => {
+      expect(() => new HoldedClient('')).toThrow(/HOLDED_API_KEY/);
+    });
+
+    it('throws when the api key is empty and names both env vars', () => {
+      expect(() => new HoldedClient('')).toThrow(/HOLDED_API_KEY_V2/);
+    });
+
+    it('accepts a v2 key without error', () => {
+      expect(() => new HoldedClient('pat_abc123')).not.toThrow();
+      expect(() => new HoldedClient('sk_live_xyz')).not.toThrow();
+    });
+  });
+
   describe('get', () => {
-    it('should make GET request with correct headers', async () => {
+    it('should make GET request with correct Bearer headers', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ data: 'test' }),
@@ -30,10 +45,10 @@ describe('HoldedClient', () => {
 
       await client.get('/contacts');
 
-      expect(mockFetch).toHaveBeenCalledWith('https://api.holded.com/api/invoicing/v1/contacts', {
+      expect(mockFetch).toHaveBeenCalledWith('https://api.holded.com/api/v2/contacts', {
         method: 'GET',
         headers: {
-          key: 'test-api-key',
+          Authorization: 'Bearer test-api-key',
           'Content-Type': 'application/json',
         },
       });
@@ -48,7 +63,7 @@ describe('HoldedClient', () => {
       await client.get('/contacts', { page: 2, limit: 50 });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.holded.com/api/invoicing/v1/contacts?page=2&limit=50',
+        'https://api.holded.com/api/v2/contacts?page=2&limit=50',
         expect.any(Object)
       );
     });
@@ -72,6 +87,16 @@ describe('HoldedClient', () => {
 
       await expect(client.get('/contacts')).rejects.toThrow('Holded API error (401): Unauthorized');
     });
+
+    it('enriches 403 errors with a scope hint', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => 'Forbidden',
+      });
+
+      await expect(client.get('/salary-records')).rejects.toThrow(/scope/);
+    });
   });
 
   describe('post', () => {
@@ -84,10 +109,10 @@ describe('HoldedClient', () => {
       const body = { name: 'Test Contact' };
       await client.post('/contacts', body);
 
-      expect(mockFetch).toHaveBeenCalledWith('https://api.holded.com/api/invoicing/v1/contacts', {
+      expect(mockFetch).toHaveBeenCalledWith('https://api.holded.com/api/v2/contacts', {
         method: 'POST',
         headers: {
-          key: 'test-api-key',
+          Authorization: 'Bearer test-api-key',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -105,16 +130,26 @@ describe('HoldedClient', () => {
       const body = { name: 'Updated Contact' };
       await client.put('/contacts/123', body);
 
+      expect(mockFetch).toHaveBeenCalledWith('https://api.holded.com/api/v2/contacts/123', {
+        method: 'PUT',
+        headers: {
+          Authorization: 'Bearer test-api-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    });
+  });
+
+  describe('patch', () => {
+    it('should make PATCH request with body', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, text: async () => '{}' });
+
+      await client.patch('/warehouses/w1', { name: 'x' });
+
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.holded.com/api/invoicing/v1/contacts/123',
-        {
-          method: 'PUT',
-          headers: {
-            key: 'test-api-key',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        }
+        'https://api.holded.com/api/v2/warehouses/w1',
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ name: 'x' }) })
       );
     });
   });
@@ -128,21 +163,18 @@ describe('HoldedClient', () => {
 
       await client.delete('/contacts/123');
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.holded.com/api/invoicing/v1/contacts/123',
-        {
-          method: 'DELETE',
-          headers: {
-            key: 'test-api-key',
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      expect(mockFetch).toHaveBeenCalledWith('https://api.holded.com/api/v2/contacts/123', {
+        method: 'DELETE',
+        headers: {
+          Authorization: 'Bearer test-api-key',
+          'Content-Type': 'application/json',
+        },
+      });
     });
   });
 
   describe('uploadFile', () => {
-    it('should upload file with FormData', async () => {
+    it('should upload file with FormData and Bearer auth', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         text: async () => JSON.stringify({ success: true }),
@@ -152,11 +184,11 @@ describe('HoldedClient', () => {
       await client.uploadFile('/documents/invoice/123/attach', buffer, 'test.pdf');
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.holded.com/api/invoicing/v1/documents/invoice/123/attach',
+        'https://api.holded.com/api/v2/documents/invoice/123/attach',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
-            key: 'test-api-key',
+            Authorization: 'Bearer test-api-key',
             'content-type': expect.stringContaining('multipart/form-data'),
           }),
           body: expect.anything(),
@@ -165,73 +197,67 @@ describe('HoldedClient', () => {
     });
   });
 
-  describe('v2 api group', () => {
-    it('uses the v2 base URL and Bearer auth header', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify({ items: [] }),
+  describe('retry logic', () => {
+    it('should retry on 429 and eventually succeed', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          text: async () => 'Too Many Requests',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({ data: 'test' }),
+        });
+
+      vi.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
+
+      const result = await client.get('/contacts');
+      expect(result).toEqual({ data: 'test' });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry on 503 and eventually succeed', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          text: async () => 'Service Unavailable',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({ data: 'test' }),
+        });
+
+      vi.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
+
+      const result = await client.get('/contacts');
+      expect(result).toEqual({ data: 'test' });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should fail after max retries on persistent 503', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: async () => 'Service Unavailable',
       });
 
-      const v2Client = new HoldedClient('v1-key', 'sk_live_test');
-      await v2Client.get('/employees', undefined, 'v2');
+      vi.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
 
-      expect(mockFetch).toHaveBeenCalledWith('https://api.holded.com/api/v2/employees', {
-        method: 'GET',
-        headers: {
-          Authorization: 'Bearer sk_live_test',
-          'Content-Type': 'application/json',
-        },
-      });
+      await expect(client.get('/contacts')).rejects.toThrow('Holded API error (503)');
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
-    it('throws a configuration error before any network call when the v2 key is missing', async () => {
-      const v1Only = new HoldedClient('v1-key');
-
-      await expect(v1Only.get('/employees', undefined, 'v2')).rejects.toThrow(/HOLDED_API_KEY_V2/);
-      expect(mockFetch).not.toHaveBeenCalled();
-    });
-
-    it('reports hasV2() based on constructor args', () => {
-      expect(new HoldedClient('k').hasV2()).toBe(false);
-      expect(new HoldedClient('k', 'sk_live_x').hasV2()).toBe(true);
-    });
-
-    it('enriches 403 errors on v2 with a scope hint', async () => {
+    it('should not retry on 401', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
-        status: 403,
-        text: async () => 'Forbidden',
+        status: 401,
+        text: async () => 'Unauthorized',
       });
 
-      const v2Client = new HoldedClient('v1-key', 'sk_live_test');
-      await expect(v2Client.get('/salary-records', undefined, 'v2')).rejects.toThrow(/scope/);
-    });
-
-    it('keeps the legacy key header for v1 groups even when a v2 key is set', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify([]),
-      });
-
-      const v2Client = new HoldedClient('v1-key', 'sk_live_test');
-      await v2Client.get('/contacts');
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.holded.com/api/invoicing/v1/contacts',
-        expect.objectContaining({
-          headers: { key: 'v1-key', 'Content-Type': 'application/json' },
-        })
-      );
-    });
-
-    it('sends PATCH with body and Bearer auth on v2', async () => {
-      mockFetch.mockResolvedValueOnce({ ok: true, text: async () => '{}' });
-      const v2Client = new HoldedClient('v1-key', 'sk_live_test');
-      await v2Client.patch('/warehouses/w1', { name: 'x' }, 'v2');
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.holded.com/api/v2/warehouses/w1',
-        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ name: 'x' }) })
-      );
+      await expect(client.get('/contacts')).rejects.toThrow('Holded API error (401)');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 });

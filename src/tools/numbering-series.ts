@@ -43,8 +43,7 @@ export function getNumberingSeriesTools(client: HoldedClient) {
           },
           summary: {
             type: 'boolean',
-            description:
-              'Return only count and pagination metadata without items (default: false)',
+            description: 'Return only count and pagination metadata without items (default: false)',
           },
           fields: {
             type: 'array',
@@ -64,7 +63,7 @@ export function getNumberingSeriesTools(client: HoldedClient) {
         fields?: string[];
       }) => {
         const result = normalizeV2List(
-          await client.get(`/numbering-series/${args.docType}`, cursorParams(args), 'v2')
+          await client.get(`/numbering-series/${args.docType}`, cursorParams(args))
         );
 
         if (args.fields?.length) {
@@ -127,7 +126,7 @@ export function getNumberingSeriesTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(createNumberingSerieSchema, async (args) => {
         const { docType, ...body } = args;
-        return client.post(`/numbering-series/${docType}`, body, 'v2');
+        return client.post(`/numbering-series/${docType}`, body);
       }),
     },
 
@@ -176,7 +175,7 @@ export function getNumberingSeriesTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateNumberingSerieSchema, async (args) => {
         const { docType, serieId, ...body } = args;
-        return client.put(`/numbering-series/${docType}/${serieId}`, body, 'v2');
+        return client.put(`/numbering-series/${docType}/${serieId}`, body);
       }),
     },
 
@@ -212,7 +211,7 @@ export function getNumberingSeriesTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(numberingSerieIdSchema, async (args) => {
-        return client.delete(`/numbering-series/${args.docType}/${args.serieId}`, 'v2');
+        return client.delete(`/numbering-series/${args.docType}/${args.serieId}`);
       }),
     },
   };

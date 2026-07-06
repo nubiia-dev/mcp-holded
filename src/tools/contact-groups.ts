@@ -35,9 +35,7 @@ export function getContactGroupTools(client: HoldedClient) {
       handler: async (
         args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const result = normalizeV2List(
-          await client.get('/contact-groups', cursorParams(args), 'v2')
-        );
+        const result = normalizeV2List(await client.get('/contact-groups', cursorParams(args)));
 
         if (args.fields?.length) {
           result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
@@ -73,7 +71,7 @@ export function getContactGroupTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: Record<string, unknown>) => {
-        return client.post('/contact-groups', args, 'v2');
+        return client.post('/contact-groups', args);
       },
     },
 
@@ -92,7 +90,7 @@ export function getContactGroupTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { groupId: string }) => {
-        return client.get(`/contact-groups/${args.groupId}`, undefined, 'v2');
+        return client.get(`/contact-groups/${args.groupId}`, undefined);
       },
     },
 
@@ -116,7 +114,7 @@ export function getContactGroupTools(client: HoldedClient) {
       destructiveHint: true,
       handler: async (args: { groupId: string; [key: string]: unknown }) => {
         const { groupId, ...body } = args;
-        return client.put(`/contact-groups/${groupId}`, body, 'v2');
+        return client.put(`/contact-groups/${groupId}`, body);
       },
     },
 
@@ -135,7 +133,7 @@ export function getContactGroupTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: { groupId: string }) => {
-        return client.delete(`/contact-groups/${args.groupId}`, 'v2');
+        return client.delete(`/contact-groups/${args.groupId}`);
       },
     },
   };

@@ -38,12 +38,13 @@ export function normalizeV2List(response: unknown): V2ListResult {
     paginationObj?.next,
   ];
   const nextCursor = candidates.find((c) => typeof c === 'string' && c.length > 0) as
-    | string
-    | undefined;
+    string | undefined;
 
   const rest: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (!['cursor', 'has_more', 'pagination', 'data', 'next', 'nextCursor', 'items'].includes(key)) {
+    if (
+      !['cursor', 'has_more', 'pagination', 'data', 'next', 'nextCursor', 'items'].includes(key)
+    ) {
       rest[key] = value;
     }
   }

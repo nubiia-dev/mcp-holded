@@ -31,12 +31,8 @@ export function getWarehouseTools(client: HoldedClient) {
         required: [],
       },
       readOnlyHint: true,
-      handler: async (
-        args: { summary?: boolean; fields?: string[] } = {}
-      ) => {
-        const result = normalizeV2List(
-          await client.get('/warehouses', undefined, 'v2')
-        );
+      handler: async (args: { summary?: boolean; fields?: string[] } = {}) => {
+        const result = normalizeV2List(await client.get('/warehouses', undefined));
 
         if (args.fields?.length) {
           result.items = (result.items as Array<Record<string, unknown>>).map((warehouse) => {
@@ -89,7 +85,7 @@ export function getWarehouseTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createWarehouseSchema, async (args) => {
-        return client.post('/warehouses', args, 'v2');
+        return client.post('/warehouses', args);
       }),
     },
 
@@ -128,11 +124,7 @@ export function getWarehouseTools(client: HoldedClient) {
       readOnlyHint: true,
       handler: withValidation(warehouseStockSchema, async (args) => {
         const result = normalizeV2List(
-          await client.get(
-            `/warehouses/${args.warehouseId}/stock`,
-            cursorParams(args),
-            'v2'
-          )
+          await client.get(`/warehouses/${args.warehouseId}/stock`, cursorParams(args))
         );
 
         if (args.fields?.length) {
@@ -169,7 +161,7 @@ export function getWarehouseTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(warehouseIdSchema, async (args) => {
-        return client.get(`/warehouses/${args.warehouseId}`, undefined, 'v2');
+        return client.get(`/warehouses/${args.warehouseId}`, undefined);
       }),
     },
 
@@ -215,7 +207,7 @@ export function getWarehouseTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateWarehouseSchema, async (args) => {
         const { warehouseId, ...body } = args;
-        return client.patch(`/warehouses/${warehouseId}`, body, 'v2');
+        return client.patch(`/warehouses/${warehouseId}`, body);
       }),
     },
 
@@ -234,7 +226,7 @@ export function getWarehouseTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(warehouseIdSchema, async (args) => {
-        return client.delete(`/warehouses/${args.warehouseId}`, 'v2');
+        return client.delete(`/warehouses/${args.warehouseId}`);
       }),
     },
   };

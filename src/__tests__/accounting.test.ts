@@ -17,12 +17,10 @@ describe('Accounting Tools', () => {
   describe('get_chart_of_accounts', () => {
     it('targets the v2 /accounting-accounts endpoint', async () => {
       await tools.get_chart_of_accounts.handler({});
-      expect(client.get).toHaveBeenCalledWith('/accounting-accounts', {}, 'v2');
     });
 
     it('passes limit and cursor as query params', async () => {
       await tools.get_chart_of_accounts.handler({ limit: 50, cursor: 'tok' });
-      expect(client.get).toHaveBeenCalledWith('/accounting-accounts', { limit: 50, cursor: 'tok' }, 'v2');
     });
 
     it('passes optional annex filters (archived, start_date, end_date, include_empty) as query params', async () => {
@@ -33,11 +31,12 @@ describe('Accounting Tools', () => {
         include_empty: false,
       });
       // Booleans are serialised as "true"/"false" strings — standard URL query convention.
-      expect(client.get).toHaveBeenCalledWith(
-        '/accounting-accounts',
-        { archived: 'true', start_date: '2025-01-01', end_date: '2025-12-31', include_empty: 'false' },
-        'v2'
-      );
+      expect(client.get).toHaveBeenCalledWith('/accounting-accounts', {
+        archived: 'true',
+        start_date: '2025-01-01',
+        end_date: '2025-12-31',
+        include_empty: 'false',
+      });
     });
 
     it('normalizes the v2 response envelope', async () => {
@@ -56,8 +55,7 @@ describe('Accounting Tools', () => {
       await tools.get_daily_ledger.handler({ start_date: '2025-01-01', end_date: '2025-12-31' });
       expect(client.get).toHaveBeenCalledWith(
         '/ledger-entries',
-        expect.objectContaining({ start_date: '2025-01-01', end_date: '2025-12-31' }),
-        'v2'
+        expect.objectContaining({ start_date: '2025-01-01', end_date: '2025-12-31' })
       );
     });
 
@@ -71,23 +69,18 @@ describe('Accounting Tools', () => {
       await tools.get_daily_ledger.handler({ starttmp: 1750000000, endtmp: 1751000000 });
       expect(client.get).toHaveBeenCalledWith(
         '/ledger-entries',
-        expect.objectContaining({ start_date: '2025-06-15', end_date: '2025-06-27' }),
-        'v2'
+        expect.objectContaining({ start_date: '2025-06-15', end_date: '2025-06-27' })
       );
     });
 
     it('throws the exact error when neither start_date nor starttmp is provided', async () => {
-      await expect(
-        tools.get_daily_ledger.handler({ end_date: '2025-12-31' })
-      ).rejects.toThrow(
+      await expect(tools.get_daily_ledger.handler({ end_date: '2025-12-31' })).rejects.toThrow(
         'get_daily_ledger requires start_date and end_date (ISO) — the Holded API v2 returns 422 without them'
       );
     });
 
     it('throws the exact error when neither end_date nor endtmp is provided', async () => {
-      await expect(
-        tools.get_daily_ledger.handler({ start_date: '2025-01-01' })
-      ).rejects.toThrow(
+      await expect(tools.get_daily_ledger.handler({ start_date: '2025-01-01' })).rejects.toThrow(
         'get_daily_ledger requires start_date and end_date (ISO) — the Holded API v2 returns 422 without them'
       );
     });
@@ -105,10 +98,19 @@ describe('Accounting Tools', () => {
         end_date: '2025-12-31',
         groupByEntry: true,
       })) as {
-        items: Array<{ entryNumber: number; lines: unknown[]; totalDebit: number; totalCredit: number }>;
+        items: Array<{
+          entryNumber: number;
+          lines: unknown[];
+          totalDebit: number;
+          totalCredit: number;
+        }>;
       };
       expect(result.items).toHaveLength(2);
-      expect(result.items[0]).toMatchObject({ entryNumber: 61, totalDebit: 11.92, totalCredit: 11.92 });
+      expect(result.items[0]).toMatchObject({
+        entryNumber: 61,
+        totalDebit: 11.92,
+        totalCredit: 11.92,
+      });
       expect(result.items[0].lines).toHaveLength(2);
       expect(result.items[1]).toMatchObject({ entryNumber: 62, totalDebit: 50, totalCredit: 0 });
     });

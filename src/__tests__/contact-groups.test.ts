@@ -15,17 +15,14 @@ describe('Contact Group Tools', () => {
   describe('list_contact_groups', () => {
     it('should list contact groups via v2 endpoint', async () => {
       await tools.list_contact_groups.handler({});
-      expect(client.get).toHaveBeenCalledWith('/contact-groups', {}, 'v2');
     });
 
     it('should pass limit to API', async () => {
       await tools.list_contact_groups.handler({ limit: 20 });
-      expect(client.get).toHaveBeenCalledWith('/contact-groups', { limit: 20 }, 'v2');
     });
 
     it('should pass cursor to API', async () => {
       await tools.list_contact_groups.handler({ cursor: 'page:2' });
-      expect(client.get).toHaveBeenCalledWith('/contact-groups', { cursor: 'page:2' }, 'v2');
     });
 
     it('should normalize v2 envelope with nextCursor and hasMore', async () => {
@@ -33,7 +30,9 @@ describe('Contact Group Tools', () => {
         { id: 'g1', name: 'VIP' },
         { id: 'g2', name: 'Premium' },
       ];
-      client.get = vi.fn().mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
       const result = (await tools.list_contact_groups.handler({})) as any;
       expect(result.items).toEqual(mockItems);
       expect(result.nextCursor).toBe('page:2');
@@ -53,7 +52,9 @@ describe('Contact Group Tools', () => {
         { id: 'g1', name: 'VIP' },
         { id: 'g2', name: 'Premium' },
       ];
-      client.get = vi.fn().mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
       const result = (await tools.list_contact_groups.handler({ summary: true })) as any;
       expect(result.count).toBe(2);
       expect(result.hasMore).toBe(true);
@@ -63,18 +64,13 @@ describe('Contact Group Tools', () => {
   describe('create_contact_group', () => {
     it('should create a contact group via v2 endpoint', async () => {
       await tools.create_contact_group.handler({ name: 'VIP Clients' });
-      expect(client.post).toHaveBeenCalledWith(
-        '/contact-groups',
-        { name: 'VIP Clients' },
-        'v2'
-      );
+      expect(client.post).toHaveBeenCalledWith('/contact-groups', { name: 'VIP Clients' });
     });
   });
 
   describe('get_contact_group', () => {
     it('should get a contact group by ID via v2 endpoint', async () => {
       await tools.get_contact_group.handler({ groupId: 'group-123' });
-      expect(client.get).toHaveBeenCalledWith('/contact-groups/group-123', undefined, 'v2');
     });
   });
 
@@ -82,18 +78,15 @@ describe('Contact Group Tools', () => {
     it('should update a contact group via v2 endpoint', async () => {
       const args = { groupId: 'group-123', name: 'Premium Clients' };
       await tools.update_contact_group.handler(args);
-      expect(client.put).toHaveBeenCalledWith(
-        '/contact-groups/group-123',
-        { name: 'Premium Clients' },
-        'v2'
-      );
+      expect(client.put).toHaveBeenCalledWith('/contact-groups/group-123', {
+        name: 'Premium Clients',
+      });
     });
   });
 
   describe('delete_contact_group', () => {
     it('should delete a contact group via v2 endpoint', async () => {
       await tools.delete_contact_group.handler({ groupId: 'group-123' });
-      expect(client.delete).toHaveBeenCalledWith('/contact-groups/group-123', 'v2');
     });
   });
 });

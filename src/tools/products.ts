@@ -48,9 +48,7 @@ export function getProductTools(client: HoldedClient) {
           fields?: string[];
         } = {}
       ) => {
-        const result = normalizeV2List(
-          await client.get('/products', cursorParams(args), 'v2')
-        );
+        const result = normalizeV2List(await client.get('/products', cursorParams(args)));
 
         if (args.fields?.length) {
           result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
@@ -119,7 +117,7 @@ export function getProductTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createProductSchema, async (args) => {
-        return client.post('/products', args, 'v2');
+        return client.post('/products', args);
       }),
     },
 
@@ -138,7 +136,7 @@ export function getProductTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(productIdSchema, async (args) => {
-        return client.get(`/products/${args.productId}`, undefined, 'v2');
+        return client.get(`/products/${args.productId}`, undefined);
       }),
     },
 
@@ -186,7 +184,7 @@ export function getProductTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateProductSchema, async (args) => {
         const { productId, ...body } = args;
-        return client.put(`/products/${productId}`, body, 'v2');
+        return client.put(`/products/${productId}`, body);
       }),
     },
 
@@ -205,7 +203,7 @@ export function getProductTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(productIdSchema, async (args) => {
-        return client.delete(`/products/${args.productId}`, 'v2');
+        return client.delete(`/products/${args.productId}`);
       }),
     },
 
@@ -224,7 +222,7 @@ export function getProductTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(productIdSchema, async (args) => {
-        return client.get(`/products/${args.productId}/image`, undefined, 'v2');
+        return client.get(`/products/${args.productId}/image`, undefined);
       }),
     },
 
@@ -243,7 +241,7 @@ export function getProductTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(productIdSchema, async (args) => {
-        return client.get(`/products/${args.productId}/images`, undefined, 'v2');
+        return client.get(`/products/${args.productId}/images`, undefined);
       }),
     },
 
@@ -266,7 +264,7 @@ export function getProductTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(productImageSchema, async (args) => {
-        return client.get(`/products/${args.productId}/images/${args.imageId}`, undefined, 'v2');
+        return client.get(`/products/${args.productId}/images/${args.imageId}`, undefined);
       }),
     },
 
@@ -288,7 +286,8 @@ export function getProductTools(client: HoldedClient) {
           },
           stock_variation: {
             type: 'number',
-            description: 'Stock delta (positive to add, negative to subtract). Replaces v1 `units`.',
+            description:
+              'Stock delta (positive to add, negative to subtract). Replaces v1 `units`.',
           },
           variant_id: {
             type: 'string',
@@ -309,7 +308,7 @@ export function getProductTools(client: HoldedClient) {
         };
         if (args.variant_id) body.variant_id = args.variant_id;
         if (args.description) body.description = args.description;
-        return client.put(`/products/${args.productId}/stock`, body, 'v2');
+        return client.put(`/products/${args.productId}/stock`, body);
       }),
     },
   };

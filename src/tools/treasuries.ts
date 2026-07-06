@@ -21,8 +21,7 @@ export function getTreasuryTools(client: HoldedClient) {
           },
           summary: {
             type: 'boolean',
-            description:
-              'Return only count and pagination metadata without items (default: false)',
+            description: 'Return only count and pagination metadata without items (default: false)',
           },
           fields: {
             type: 'array',
@@ -37,9 +36,7 @@ export function getTreasuryTools(client: HoldedClient) {
       handler: async (
         args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const result = normalizeV2List(
-          await client.get('/treasury/accounts', cursorParams(args), 'v2')
-        );
+        const result = normalizeV2List(await client.get('/treasury/accounts', cursorParams(args)));
 
         if (args.fields?.length) {
           result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
@@ -88,7 +85,7 @@ export function getTreasuryTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createTreasurySchema, async (args) => {
-        return client.post('/treasury/accounts', args, 'v2');
+        return client.post('/treasury/accounts', args);
       }),
     },
 
@@ -108,7 +105,7 @@ export function getTreasuryTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(treasuryIdSchema, async (args) => {
-        return client.get(`/treasury/accounts/${args.treasuryId}`, undefined, 'v2');
+        return client.get(`/treasury/accounts/${args.treasuryId}`, undefined);
       }),
     },
   };

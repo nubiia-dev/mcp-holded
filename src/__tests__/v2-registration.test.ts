@@ -1,25 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { HoldedClient } from '../holded-client.js';
 import { getTeamTools } from '../tools/team.js';
 
-// Mock node-fetch so no real network calls are made
-vi.mock('node-fetch', () => ({
-  default: vi.fn(),
-}));
-
-describe('v2 tool registration — config error surfaced on v1-only tenant', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe('v2-only client — all tools registered unconditionally', () => {
+  it('constructor throws with env var guidance when api key is empty', () => {
+    expect(() => new HoldedClient('')).toThrow(/HOLDED_API_KEY/);
+    expect(() => new HoldedClient('')).toThrow(/HOLDED_API_KEY_V2/);
+    expect(() => new HoldedClient('')).toThrow(/v2 key/);
   });
 
-  it('surfaces HOLDED_API_KEY_V2 config error when a v2 tool is called on a v1-only tenant', async () => {
-    // A client without a v2 key — simulates a tenant that only has HOLDED_API_KEY set
-    const v1OnlyClient = new HoldedClient('v1-key');
-
-    // Tools are registered unconditionally in the CallTool handler
-    const tools = getTeamTools(v1OnlyClient);
-
-    // Calling a v2 tool must reject with the config error, not "Unknown tool"
-    await expect(tools.list_employees.handler({})).rejects.toThrow(/HOLDED_API_KEY_V2/);
+  it('team tools are registered regardless of key type', () => {
+    const client = new HoldedClient('pat_test_key');
+    const tools = getTeamTools(client);
+    expect(tools).toHaveProperty('list_employees');
+    expect(tools).toHaveProperty('get_employee');
+    expect(tools).toHaveProperty('list_salary_records');
   });
 });
