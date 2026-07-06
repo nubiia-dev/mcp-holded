@@ -33,6 +33,31 @@ This MCP server provides access to the complete Holded Invoice API:
 
 **Total: 76 tools** (+1 experimental banking tool, opt-in)
 
+## Holded API v2 (Team/HR, Ledger, Treasury)
+
+Holded released its unified API v2 in June 2026 (Bearer auth, scoped keys, cursor pagination). This server keeps all existing tools on the stable v1 APIs and uses v2 **only** for modules v1 does not cover.
+
+### Setup
+
+1. In Holded go to **Settings → API** and generate a v2 key (`sk_live_…`) with the scopes you need (e.g. `accounting:payrolls.read`).
+2. Set the environment variable:
+   - Single tenant: `HOLDED_API_KEY_V2=sk_live_…`
+   - Multi-tenant: `TENANT_1_API_KEY_V2=sk_live_…` (per tenant)
+
+Without this variable the v2 tools are not registered and nothing changes for existing users. A `403` response means the key is missing a scope.
+
+### v2 Tools
+
+| Module | Tools |
+|--------|-------|
+| Employees | `list_employees`, `get_employee`, `create_employee`, `update_employee`, `delete_employee`, `get_employee_contract`, `update_employee_contract` |
+| Time Tracking | `clock_in_employee`, `clock_out_employee`, `pause_employee`, `unpause_employee`, `list_employee_times`, `get_employee_time`, `create_employee_time`, `update_employee_time`, `delete_employee_time` |
+| Payroll | `list_salary_records`, `get_salary_record`, `create_salary_record`, `update_salary_record`, `delete_salary_record`, `get_salary_record_defaults` |
+| Ledger | `list_ledger_entries`, `create_ledger_entry`, `list_accounting_accounts`, `create_accounting_account` |
+| Treasury | `list_bank_accounts`, `get_bank_account`, `create_bank_account`, `update_bank_account`, `delete_bank_account`, `archive_bank_account`, `list_bank_movements`, `create_bank_movement`, `reconcile_bank_movement`, `list_cash_movements`, `list_invoicing_forecasts`, `get_invoicing_forecast`, `create_invoicing_forecast`, `update_invoicing_forecast`, `delete_invoicing_forecast` |
+
+**Write Safety:** Create/update/delete tools in these modules modify real HR, accounting and treasury data. List/get tools are read-only. The official treasury tools supersede the experimental internal banking tools (`HOLDED_ENABLE_EXPERIMENTAL_BANKING`), which remain available unchanged.
+
 ## Installation
 
 ### Prerequisites
@@ -58,12 +83,25 @@ npm run build
 
 ## Configuration
 
-### Environment Variable
+### Environment Variables
 
-Set your Holded API key:
+Set your Holded API key (v1):
 
 ```bash
 export HOLDED_API_KEY=your_api_key_here
+```
+
+For API v2 tools (Team/HR, Ledger, Treasury):
+
+```bash
+export HOLDED_API_KEY_V2=sk_live_your_v2_key_here
+```
+
+Or in a multi-tenant setup:
+
+```bash
+export TENANT_1_API_KEY_V2=sk_live_your_v2_key_here
+export TENANT_2_API_KEY_V2=sk_live_another_v2_key_here
 ```
 
 ### Claude Desktop Configuration
@@ -80,7 +118,8 @@ Add to your Claude Desktop config file:
       "command": "npx",
       "args": ["-y", "@nubiia/mcp-holded"],
       "env": {
-        "HOLDED_API_KEY": "your_api_key_here"
+        "HOLDED_API_KEY": "your_api_key_here",
+        "HOLDED_API_KEY_V2": "sk_live_your_v2_key_here"
       }
     }
   }
@@ -96,7 +135,8 @@ Or if installed from source:
       "command": "node",
       "args": ["/path/to/mcp-holded/dist/index.js"],
       "env": {
-        "HOLDED_API_KEY": "your_api_key_here"
+        "HOLDED_API_KEY": "your_api_key_here",
+        "HOLDED_API_KEY_V2": "sk_live_your_v2_key_here"
       }
     }
   }
