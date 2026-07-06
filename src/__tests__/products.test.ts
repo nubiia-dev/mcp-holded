@@ -13,21 +13,65 @@ describe('Product Tools', () => {
   });
 
   describe('list_products', () => {
-    it('should list all products', async () => {
+    it('should list all products via v2', async () => {
       await tools.list_products.handler({});
-      expect(client.get).toHaveBeenCalledWith('/products', {});
+      expect(client.get).toHaveBeenCalledWith('/products', {}, 'v2');
     });
 
-    it('should support pagination', async () => {
-      await tools.list_products.handler({ page: 2 });
-      expect(client.get).toHaveBeenCalledWith('/products', { page: 2 });
+    it('should pass limit to API', async () => {
+      await tools.list_products.handler({ limit: 10 });
+      expect(client.get).toHaveBeenCalledWith('/products', { limit: 10 }, 'v2');
+    });
+
+    it('should pass cursor to API', async () => {
+      await tools.list_products.handler({ cursor: 'page:2' });
+      expect(client.get).toHaveBeenCalledWith('/products', { cursor: 'page:2' }, 'v2');
+    });
+
+    it('should pass limit and cursor together', async () => {
+      await tools.list_products.handler({ limit: 20, cursor: 'page:3' });
+      expect(client.get).toHaveBeenCalledWith('/products', { limit: 20, cursor: 'page:3' }, 'v2');
+    });
+
+    it('should normalize v2 envelope with nextCursor and hasMore', async () => {
+      const mockItems = [
+        { id: 'p1', name: 'Widget' },
+        { id: 'p2', name: 'Gadget' },
+      ];
+      client.get = vi.fn().mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
+      const result = (await tools.list_products.handler({})) as any;
+      expect(result.items).toEqual(mockItems);
+      expect(result.nextCursor).toBe('page:2');
+      expect(result.hasMore).toBe(true);
+    });
+
+    it('should support fields filtering preserving nextCursor and hasMore', async () => {
+      const mockItems = [{ id: 'p1', name: 'Widget', sku: 'W-001' }];
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
+      const result = (await tools.list_products.handler({ fields: ['id', 'name'] })) as any;
+      expect(result.items[0]).toEqual({ id: 'p1', name: 'Widget' });
+      expect(result.items[0]).not.toHaveProperty('sku');
+      expect(result.nextCursor).toBe('page:2');
+      expect(result.hasMore).toBe(true);
+    });
+
+    it('should support summary mode', async () => {
+      const mockItems = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, name: `Product ${i}` }));
+      client.get = vi
+        .fn()
+        .mockResolvedValue({ items: mockItems, cursor: 'page:2', has_more: true });
+      const result = (await tools.list_products.handler({ summary: true })) as any;
+      expect(result.count).toBe(5);
+      expect(result.hasMore).toBe(true);
     });
   });
 
   describe('create_product', () => {
-    it('should create a product with required fields', async () => {
+    it('should create a product with required fields (v2)', async () => {
       await tools.create_product.handler({ name: 'Test Product' });
-      expect(client.post).toHaveBeenCalledWith('/products', { name: 'Test Product' });
+      expect(client.post).toHaveBeenCalledWith('/products', { name: 'Test Product' }, 'v2');
     });
 
     it('should include optional fields', async () => {
@@ -40,22 +84,22 @@ describe('Product Tools', () => {
         tax: 21,
         description: 'A test product',
         stock: 100,
-        kind: 'product',
+        kind: 'product' as const,
       };
       await tools.create_product.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/products', args);
+      expect(client.post).toHaveBeenCalledWith('/products', args, 'v2');
     });
   });
 
   describe('get_product', () => {
-    it('should get a product by ID', async () => {
+    it('should get a product by ID (v2)', async () => {
       await tools.get_product.handler({ productId: 'product-123' });
-      expect(client.get).toHaveBeenCalledWith('/products/product-123');
+      expect(client.get).toHaveBeenCalledWith('/products/product-123', undefined, 'v2');
     });
   });
 
   describe('update_product', () => {
-    it('should update a product', async () => {
+    it('should update a product (v2)', async () => {
       const args = {
         productId: 'product-123',
         name: 'Updated Product',
@@ -65,60 +109,81 @@ describe('Product Tools', () => {
       expect(client.put).toHaveBeenCalledWith('/products/product-123', {
         name: 'Updated Product',
         price: 149.99,
-      });
+      }, 'v2');
     });
   });
 
   describe('delete_product', () => {
-    it('should delete a product', async () => {
+    it('should delete a product (v2)', async () => {
       await tools.delete_product.handler({ productId: 'product-123' });
-      expect(client.delete).toHaveBeenCalledWith('/products/product-123');
+      expect(client.delete).toHaveBeenCalledWith('/products/product-123', 'v2');
     });
   });
 
   describe('get_product_main_image', () => {
-    it('should get product main image', async () => {
+    it('should get product main image (v2)', async () => {
       await tools.get_product_main_image.handler({ productId: 'product-123' });
-      expect(client.get).toHaveBeenCalledWith('/products/product-123/image');
+      expect(client.get).toHaveBeenCalledWith('/products/product-123/image', undefined, 'v2');
     });
   });
 
   describe('list_product_images', () => {
-    it('should list product images', async () => {
+    it('should list product images (v2)', async () => {
       await tools.list_product_images.handler({ productId: 'product-123' });
-      expect(client.get).toHaveBeenCalledWith('/products/product-123/images');
+      expect(client.get).toHaveBeenCalledWith('/products/product-123/images', undefined, 'v2');
     });
   });
 
   describe('get_product_secondary_image', () => {
-    it('should get a secondary image', async () => {
+    it('should get a secondary image (v2)', async () => {
       await tools.get_product_secondary_image.handler({
         productId: 'product-123',
         imageId: 'image-456',
       });
-      expect(client.get).toHaveBeenCalledWith('/products/product-123/images/image-456');
+      expect(client.get).toHaveBeenCalledWith('/products/product-123/images/image-456', undefined, 'v2');
     });
   });
 
   describe('update_product_stock', () => {
-    it('should update product stock', async () => {
-      await tools.update_product_stock.handler({
-        productId: 'product-123',
-        units: 50,
-      });
-      expect(client.put).toHaveBeenCalledWith('/products/product-123/stock', { units: 50 });
+    it('should require warehouse_id in inputSchema', () => {
+      expect(tools.update_product_stock.inputSchema.required).toContain('warehouse_id');
     });
 
-    it('should include warehouse ID if provided', async () => {
+    it('should update product stock with stock_variation and warehouse_id (v2)', async () => {
       await tools.update_product_stock.handler({
         productId: 'product-123',
-        warehouseId: 'warehouse-1',
-        units: -10,
+        warehouse_id: 'warehouse-1',
+        stock_variation: 50,
       });
       expect(client.put).toHaveBeenCalledWith('/products/product-123/stock', {
-        units: -10,
-        warehouseId: 'warehouse-1',
+        stock_variation: 50,
+        warehouse_id: 'warehouse-1',
+      }, 'v2');
+    });
+
+    it('should include optional variant_id and description', async () => {
+      await tools.update_product_stock.handler({
+        productId: 'product-123',
+        warehouse_id: 'warehouse-1',
+        stock_variation: -10,
+        variant_id: 'var-abc',
+        description: 'Inventory adjustment',
       });
+      expect(client.put).toHaveBeenCalledWith('/products/product-123/stock', {
+        stock_variation: -10,
+        warehouse_id: 'warehouse-1',
+        variant_id: 'var-abc',
+        description: 'Inventory adjustment',
+      }, 'v2');
+    });
+
+    it('should reject call without warehouse_id', async () => {
+      await expect(
+        tools.update_product_stock.handler({
+          productId: 'product-123',
+          stock_variation: 10,
+        } as any)
+      ).rejects.toThrow();
     });
   });
 });

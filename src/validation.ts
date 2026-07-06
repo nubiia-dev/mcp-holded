@@ -337,8 +337,14 @@ export const productImageSchema = z.object({
 
 export const updateProductStockSchema = z.object({
   productId: z.string().min(1),
-  warehouseId: z.string().optional(),
-  units: z.number().int(),
+  /** Warehouse ID — required in v2 (v2 rejects stock updates without it). */
+  warehouse_id: z.string().min(1),
+  /** Stock delta (positive to add, negative to subtract). Replaces v1 `units`. */
+  stock_variation: z.number(),
+  /** Optional variant ID to target a specific product variant. */
+  variant_id: z.string().optional(),
+  /** Optional audit note describing the stock adjustment. */
+  description: z.string().optional(),
 });
 
 // Treasury schemas
@@ -371,7 +377,8 @@ export const updateWarehouseSchema = warehouseIdSchema.merge(createWarehouseSche
 
 export const warehouseStockSchema = warehouseIdSchema
   .merge(paginationSchema)
-  .merge(fieldFilteringSchema);
+  .merge(fieldFilteringSchema)
+  .merge(z.object({ cursor: z.string().optional() }));
 
 // Service schemas
 export const serviceIdSchema = z.object({

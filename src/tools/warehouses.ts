@@ -1,4 +1,5 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 import {
   warehouseIdSchema,
   createWarehouseSchema,
@@ -12,82 +13,50 @@ export function getWarehouseTools(client: HoldedClient) {
     // List Warehouses
     list_warehouses: {
       description:
-        'List all warehouses with pagination support. Supports field filtering to reduce response size.',
+        'List all warehouses (Holded API v2). All warehouses are returned in a single call (no cursor pagination). Supports field filtering and summary mode.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          page: {
-            type: 'number',
-            description: 'Page number (starting from 1, default: 1)',
-          },
-          pageSize: {
-            type: 'number',
-            description: 'Number of items per page (default: 50, max: 500)',
-          },
           summary: {
             type: 'boolean',
-            description: 'Return only total count and page count without items (default: false)',
+            description: 'Return only total count without items (default: false)',
           },
           fields: {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "name", "address"]). Reduces response size by 70-90%. If not provided, returns default fields: id, name, address',
+              'Project only these fields per item (e.g. ["id", "name", "address"]). Reduces response size.',
           },
         },
         required: [],
       },
       readOnlyHint: true,
       handler: async (
-        args: { page?: number; pageSize?: number; summary?: boolean; fields?: string[] } = {}
+        args: { summary?: boolean; fields?: string[] } = {}
       ) => {
-        const warehouses = (await client.get('/warehouses')) as Array<Record<string, unknown>>;
+        const result = normalizeV2List(
+          await client.get('/warehouses', undefined, 'v2')
+        );
 
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['id', 'name', 'address'];
-        const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
-
-        const filtered = warehouses.map((warehouse) => {
-          const result: Record<string, unknown> = {};
-          for (const field of fieldsToInclude) {
-            if (field in warehouse) {
-              result[field] = warehouse[field];
-            }
-          }
-          return result;
-        });
-
-        // Pagination
-        const page = Math.max(args.page ?? 1, 1);
-        const pageSize = Math.min(args.pageSize ?? 50, 500);
-        const total = filtered.length;
-        const totalPages = Math.ceil(total / pageSize);
-        const startIndex = (page - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const items = filtered.slice(startIndex, endIndex);
-
-        // Summary mode: return only metadata
-        if (args.summary) {
-          return {
-            total,
-            totalPages,
-          };
+        if (args.fields?.length) {
+          result.items = (result.items as Array<Record<string, unknown>>).map((warehouse) => {
+            const picked: Record<string, unknown> = {};
+            for (const f of args.fields as string[]) if (f in warehouse) picked[f] = warehouse[f];
+            return picked;
+          });
         }
 
-        return {
-          items,
-          page,
-          pageSize,
-          total,
-          totalPages,
-        };
+        if (args.summary) {
+          return { total: result.items.length };
+        }
+
+        return result;
       },
     },
 
     // Create Warehouse
     create_warehouse: {
-      description: 'Create a new warehouse',
+      description: 'Create a new warehouse (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -120,14 +89,14 @@ export function getWarehouseTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createWarehouseSchema, async (args) => {
-        return client.post('/warehouses', args);
+        return client.post('/warehouses', args, 'v2');
       }),
     },
 
     // List Products Stock in Warehouse
     list_warehouse_stock: {
       description:
-        'List all products stock in a specific warehouse. Supports field filtering to reduce response size.',
+        'List all products stock in a specific warehouse (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. API caps at 100 items per page. Supports field filtering to reduce response size.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -135,13 +104,13 @@ export function getWarehouseTools(client: HoldedClient) {
             type: 'string',
             description: 'Warehouse ID',
           },
-          page: {
-            type: 'number',
-            description: 'Page number for pagination (optional)',
-          },
           limit: {
             type: 'number',
-            description: 'Maximum number of items to return (default: 50, max: 500)',
+            description: 'Max items per page (API caps at 100)',
+          },
+          cursor: {
+            type: 'string',
+            description: 'Cursor from a previous response nextCursor',
           },
           summary: {
             type: 'boolean',
@@ -151,59 +120,43 @@ export function getWarehouseTools(client: HoldedClient) {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["productId", "productName", "sku", "stock"]). Reduces response size by 70-90%. If not provided, returns default fields: productId, productName, sku, stock',
+              'Project only these fields per item (e.g. ["product_id", "stock"]). Reduces response size.',
           },
         },
         required: ['warehouseId'],
       },
       readOnlyHint: true,
       handler: withValidation(warehouseStockSchema, async (args) => {
-        const queryParams: Record<string, string | number> = {};
-        if (args.page) queryParams.page = args.page;
-        if (args.limit) queryParams.limit = Math.min(args.limit, 500);
-        const stock = (await client.get(
-          `/warehouses/${args.warehouseId}/stock`,
-          queryParams
-        )) as Array<Record<string, unknown>>;
+        const result = normalizeV2List(
+          await client.get(
+            `/warehouses/${args.warehouseId}/stock`,
+            cursorParams(args),
+            'v2'
+          )
+        );
 
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['productId', 'productName', 'sku', 'stock'];
-        const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
-
-        const filtered = stock.map((item) => {
-          const result: Record<string, unknown> = {};
-          for (const field of fieldsToInclude) {
-            if (field in item) {
-              result[field] = item[field];
-            }
-          }
-          return result;
-        });
-
-        const limit = Math.min(args.limit ?? 50, 500);
-        const items = filtered.slice(0, limit);
-
-        // Summary mode: return only count and metadata
-        if (args.summary) {
-          return {
-            count: items.length,
-            hasMore: items.length === limit && filtered.length > limit,
-          };
+        if (args.fields?.length) {
+          result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
+            const picked: Record<string, unknown> = {};
+            for (const f of args.fields as string[]) if (f in item) picked[f] = item[f];
+            return picked;
+          });
         }
 
-        return {
-          items,
-          page: args.page,
-          pageSize: items.length,
-          hasMore: items.length === limit && filtered.length > limit,
-        };
+        if (args.summary) {
+          const out: Record<string, unknown> = { count: result.items.length };
+          if (result.nextCursor) out.nextCursor = result.nextCursor;
+          if (result.hasMore !== undefined) out.hasMore = result.hasMore;
+          return out;
+        }
+
+        return result;
       }),
     },
 
     // Get Warehouse
     get_warehouse: {
-      description: 'Get a specific warehouse by ID',
+      description: 'Get a specific warehouse by ID (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -216,13 +169,15 @@ export function getWarehouseTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(warehouseIdSchema, async (args) => {
-        return client.get(`/warehouses/${args.warehouseId}`);
+        return client.get(`/warehouses/${args.warehouseId}`, undefined, 'v2');
       }),
     },
 
     // Update Warehouse
     update_warehouse: {
-      description: 'Update an existing warehouse',
+      description:
+        'Update an existing warehouse (Holded API v2). ' +
+        'BREAKING CHANGE from v1: HTTP verb changed from PUT to PATCH.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -260,13 +215,13 @@ export function getWarehouseTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateWarehouseSchema, async (args) => {
         const { warehouseId, ...body } = args;
-        return client.put(`/warehouses/${warehouseId}`, body);
+        return client.patch(`/warehouses/${warehouseId}`, body, 'v2');
       }),
     },
 
     // Delete Warehouse
     delete_warehouse: {
-      description: 'Delete a warehouse',
+      description: 'Delete a warehouse (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -279,7 +234,7 @@ export function getWarehouseTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(warehouseIdSchema, async (args) => {
-        return client.delete(`/warehouses/${args.warehouseId}`);
+        return client.delete(`/warehouses/${args.warehouseId}`, 'v2');
       }),
     },
   };

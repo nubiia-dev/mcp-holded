@@ -1,4 +1,5 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 import {
   productIdSchema,
   createProductSchema,
@@ -13,17 +14,17 @@ export function getProductTools(client: HoldedClient) {
     // List Products
     list_products: {
       description:
-        'List all products with optional pagination. Supports field filtering to reduce response size.',
+        'List products (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. API caps at 100 items per page. Response fields are snake_case; amounts are strings with decimal comma.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          page: {
-            type: 'number',
-            description: 'Page number for pagination (optional)',
-          },
           limit: {
             type: 'number',
-            description: 'Maximum number of items to return (default: 50, max: 500)',
+            description: 'Max items per page (API caps at 100)',
+          },
+          cursor: {
+            type: 'string',
+            description: 'Cursor from a previous response nextCursor',
           },
           summary: {
             type: 'boolean',
@@ -33,60 +34,46 @@ export function getProductTools(client: HoldedClient) {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "name", "price"]). Reduces response size by 70-90%. If not provided, returns default fields: id, name, sku, price, stock',
+              'Project only these fields per item (e.g. ["id", "name", "sku"]). Reduces response size.',
           },
         },
         required: [],
       },
       readOnlyHint: true,
       handler: async (
-        args: { page?: number; limit?: number; summary?: boolean; fields?: string[] } = {}
+        args: {
+          limit?: number;
+          cursor?: string;
+          summary?: boolean;
+          fields?: string[];
+        } = {}
       ) => {
-        const queryParams: Record<string, string | number> = {};
-        if (args.page) queryParams.page = args.page;
-        if (args.limit) queryParams.limit = Math.min(args.limit, 500);
-        const products = (await client.get('/products', queryParams)) as Array<
-          Record<string, unknown>
-        >;
-        const limit = Math.min(args.limit ?? 50, 500);
+        const result = normalizeV2List(
+          await client.get('/products', cursorParams(args), 'v2')
+        );
 
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['id', 'name', 'sku', 'price', 'stock'];
-        const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
-
-        const filtered = products.map((product) => {
-          const result: Record<string, unknown> = {};
-          for (const field of fieldsToInclude) {
-            if (field in product) {
-              result[field] = product[field];
-            }
-          }
-          return result;
-        });
-
-        const items = filtered.slice(0, limit);
-
-        // Summary mode: return only count and metadata
-        if (args.summary) {
-          return {
-            count: items.length,
-            hasMore: items.length === limit && filtered.length > limit,
-          };
+        if (args.fields?.length) {
+          result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
+            const picked: Record<string, unknown> = {};
+            for (const f of args.fields as string[]) if (f in item) picked[f] = item[f];
+            return picked;
+          });
         }
 
-        return {
-          items,
-          page: args.page,
-          pageSize: items.length,
-          hasMore: items.length === limit && filtered.length > limit,
-        };
+        if (args.summary) {
+          const out: Record<string, unknown> = { count: result.items.length };
+          if (result.nextCursor) out.nextCursor = result.nextCursor;
+          if (result.hasMore !== undefined) out.hasMore = result.hasMore;
+          return out;
+        }
+
+        return result;
       },
     },
 
     // Create Product
     create_product: {
-      description: 'Create a new product',
+      description: 'Create a new product (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -132,13 +119,13 @@ export function getProductTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createProductSchema, async (args) => {
-        return client.post('/products', args);
+        return client.post('/products', args, 'v2');
       }),
     },
 
     // Get Product
     get_product: {
-      description: 'Get a specific product by ID',
+      description: 'Get a specific product by ID (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -151,13 +138,13 @@ export function getProductTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(productIdSchema, async (args) => {
-        return client.get(`/products/${args.productId}`);
+        return client.get(`/products/${args.productId}`, undefined, 'v2');
       }),
     },
 
     // Update Product
     update_product: {
-      description: 'Update an existing product',
+      description: 'Update an existing product (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -199,13 +186,13 @@ export function getProductTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateProductSchema, async (args) => {
         const { productId, ...body } = args;
-        return client.put(`/products/${productId}`, body);
+        return client.put(`/products/${productId}`, body, 'v2');
       }),
     },
 
     // Delete Product
     delete_product: {
-      description: 'Delete a product',
+      description: 'Delete a product (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -218,13 +205,13 @@ export function getProductTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(productIdSchema, async (args) => {
-        return client.delete(`/products/${args.productId}`);
+        return client.delete(`/products/${args.productId}`, 'v2');
       }),
     },
 
     // Get Product Main Image
     get_product_main_image: {
-      description: 'Get the main image of a product',
+      description: 'Get the main image of a product (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -237,13 +224,13 @@ export function getProductTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(productIdSchema, async (args) => {
-        return client.get(`/products/${args.productId}/image`);
+        return client.get(`/products/${args.productId}/image`, undefined, 'v2');
       }),
     },
 
     // List Product Images
     list_product_images: {
-      description: 'List all images of a product',
+      description: 'List all images of a product (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -256,13 +243,13 @@ export function getProductTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(productIdSchema, async (args) => {
-        return client.get(`/products/${args.productId}/images`);
+        return client.get(`/products/${args.productId}/images`, undefined, 'v2');
       }),
     },
 
     // Get Product Secondary Image
     get_product_secondary_image: {
-      description: 'Get a secondary image of a product',
+      description: 'Get a secondary image of a product (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -279,13 +266,15 @@ export function getProductTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(productImageSchema, async (args) => {
-        return client.get(`/products/${args.productId}/images/${args.imageId}`);
+        return client.get(`/products/${args.productId}/images/${args.imageId}`, undefined, 'v2');
       }),
     },
 
     // Update Product Stock
     update_product_stock: {
-      description: 'Update stock quantity for a product',
+      description:
+        'Update stock quantity for a product (Holded API v2). ' +
+        'BREAKING CHANGE from v1: `warehouse_id` is now required; `stock_variation` replaces `units`; optional `variant_id` and `description` added.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -293,22 +282,34 @@ export function getProductTools(client: HoldedClient) {
             type: 'string',
             description: 'Product ID',
           },
-          warehouseId: {
+          warehouse_id: {
             type: 'string',
-            description: 'Warehouse ID (optional)',
+            description: 'Warehouse ID (required in v2 — v2 rejects stock updates without it)',
           },
-          units: {
+          stock_variation: {
             type: 'number',
-            description: 'Number of units to add or subtract',
+            description: 'Stock delta (positive to add, negative to subtract). Replaces v1 `units`.',
+          },
+          variant_id: {
+            type: 'string',
+            description: 'Variant ID to target a specific product variant (optional)',
+          },
+          description: {
+            type: 'string',
+            description: 'Audit note describing the stock adjustment (optional)',
           },
         },
-        required: ['productId', 'units'],
+        required: ['productId', 'warehouse_id', 'stock_variation'],
       },
       destructiveHint: true,
       handler: withValidation(updateProductStockSchema, async (args) => {
-        const body: Record<string, unknown> = { units: args.units };
-        if (args.warehouseId) body.warehouseId = args.warehouseId;
-        return client.put(`/products/${args.productId}/stock`, body);
+        const body: Record<string, unknown> = {
+          stock_variation: args.stock_variation,
+          warehouse_id: args.warehouse_id,
+        };
+        if (args.variant_id) body.variant_id = args.variant_id;
+        if (args.description) body.description = args.description;
+        return client.put(`/products/${args.productId}/stock`, body, 'v2');
       }),
     },
   };
