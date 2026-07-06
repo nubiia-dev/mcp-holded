@@ -73,6 +73,14 @@ const rateLimiter = new RateLimiter({
     create_ledger_entry: { maxRequests: 20, windowMs: 60000 },
     create_bank_movement: { maxRequests: 20, windowMs: 60000 },
     delete_bank_account: { maxRequests: 10, windowMs: 60000 },
+    update_employee: { maxRequests: 30, windowMs: 60000 },
+    update_salary_record: { maxRequests: 30, windowMs: 60000 },
+    update_bank_account: { maxRequests: 30, windowMs: 60000 },
+    delete_employee_time: { maxRequests: 10, windowMs: 60000 },
+    delete_invoicing_forecast: { maxRequests: 10, windowMs: 60000 },
+    delete_service: { maxRequests: 10, windowMs: 60000 },
+    delete_warehouse: { maxRequests: 10, windowMs: 60000 },
+    delete_product: { maxRequests: 10, windowMs: 60000 },
   },
 });
 
