@@ -8,6 +8,7 @@ export function createMockClient() {
   vi.spyOn(client, 'get').mockResolvedValue([]);
   vi.spyOn(client, 'post').mockResolvedValue({ id: 'new-id', success: true });
   vi.spyOn(client, 'put').mockResolvedValue({ success: true });
+  vi.spyOn(client, 'patch').mockResolvedValue({ success: true });
   vi.spyOn(client, 'delete').mockResolvedValue({ success: true });
   vi.spyOn(client, 'uploadFile').mockResolvedValue({ success: true });
 

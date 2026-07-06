@@ -99,7 +99,7 @@ export class HoldedClient {
       headers,
     };
 
-    if (body && (method === 'POST' || method === 'PUT')) {
+    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
       options.body = JSON.stringify(body);
     }
 
@@ -193,6 +193,14 @@ export class HoldedClient {
     apiGroup: ApiGroup = DEFAULT_API_GROUP
   ): Promise<T> {
     return this.request<T>('PUT', endpoint, body, undefined, apiGroup);
+  }
+
+  async patch<T>(
+    endpoint: string,
+    body?: unknown,
+    apiGroup: ApiGroup = DEFAULT_API_GROUP
+  ): Promise<T> {
+    return this.request<T>('PATCH', endpoint, body, undefined, apiGroup);
   }
 
   async delete<T>(endpoint: string, apiGroup: ApiGroup = DEFAULT_API_GROUP): Promise<T> {

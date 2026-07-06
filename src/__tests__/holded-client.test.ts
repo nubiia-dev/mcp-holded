@@ -223,5 +223,15 @@ describe('HoldedClient', () => {
         })
       );
     });
+
+    it('sends PATCH with body and Bearer auth on v2', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, text: async () => '{}' });
+      const v2Client = new HoldedClient('v1-key', 'sk_live_test');
+      await v2Client.patch('/warehouses/w1', { name: 'x' }, 'v2');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.holded.com/api/v2/warehouses/w1',
+        expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ name: 'x' }) })
+      );
+    });
   });
 });
