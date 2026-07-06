@@ -6,7 +6,7 @@ export function getContactGroupTools(client: HoldedClient) {
     // List Contact Groups
     list_contact_groups: {
       description:
-        'List contact groups (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case.',
+        'List contact groups (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma.',
       inputSchema: {
         type: 'object' as const,
         properties: {
