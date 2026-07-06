@@ -87,6 +87,47 @@ function attachWarnings<T>(result: T, warnings: string[]): T {
   return { value: result, _warnings: warnings } as unknown as T;
 }
 
+/**
+ * Throw a clear, consistent error for operations that have no v2 equivalent.
+ * Using `never` return type lets TypeScript understand this always throws, so
+ * callers don't need explicit `return` after calling it.
+ */
+function unsupportedOp(operation: string, docType: string): never {
+  throw new Error(`${operation} on ${docType} is not supported by the Holded API v2`);
+}
+
+/**
+ * Document types that support pay_document in v2.
+ * Source: annex tables 1.1–1.11 (pay column).
+ */
+const PAYABLE_DOC_TYPES = new Set(['invoice', 'salesreceipt', 'creditnote', 'receiptnote', 'purchase']);
+
+/**
+ * Document types that support send_document in v2.
+ * purchase → NO EQUIVALENT (table 1.9); purchaserefund → entirely unsupported.
+ */
+const SENDABLE_DOC_TYPES = new Set([
+  'invoice', 'salesreceipt', 'creditnote', 'receiptnote',
+  'estimate', 'proform', 'salesorder', 'waybill', 'purchaseorder',
+]);
+
+/**
+ * Document types that support get_document_pdf in v2.
+ * purchase → NO EQUIVALENT (table 1.9); purchaserefund → entirely unsupported.
+ */
+const PDF_DOC_TYPES = new Set([
+  'invoice', 'salesreceipt', 'creditnote', 'receiptnote',
+  'estimate', 'proform', 'salesorder', 'waybill', 'purchaseorder',
+]);
+
+/**
+ * Document types that support update_document_tracking in v2.
+ * NOTE: The task brief says "NO EQUIVALENT for all types" but the normative
+ * annex tables (1.7 salesorder, 1.8 waybill) explicitly list PUT .../tracking.
+ * Per task instructions "annex wins" — tracking IS supported for these two types.
+ */
+const TRACKING_DOC_TYPES = new Set(['salesorder', 'waybill']);
+
 export function getDocumentTools(client: HoldedClient) {
   return {
     // List Documents
@@ -561,7 +602,7 @@ export function getDocumentTools(client: HoldedClient) {
     // Pay Document
     pay_document: {
       description:
-        "Register a payment for a document. IMPORTANT: this AUTO-APPROVES the document as a side effect (status 0→1) — Holded has no separate approve endpoint, and approval cannot be undone via the API. `paymentmethod` is the payment-method catalog id (from list_payment_methods), NOT a bank/treasury id. To link the payment to a bank account, pass `bankId`: the /pay endpoint can't set it, so the tool performs a second step (PUT /payments/{id}) and reports the outcome in `_warnings`.",
+        "Register a payment for a document (Holded API v2). Supported docTypes: invoice, salesreceipt, creditnote, receiptnote, purchase — others throw an unsupported error. IMPORTANT: this may AUTO-APPROVE the document as a side effect (status 0→1). `paymentmethod` is the payment-method catalog id (from list_payment_methods), NOT a bank/treasury id. To link the payment to a bank account, pass `bankId`: the /payments endpoint can't set it, so the tool performs a second step (PUT /payments/{id}) and reports the outcome in `_warnings`.",
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -614,21 +655,24 @@ export function getDocumentTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(payDocumentSchema, async (args) => {
         const { docType, documentId, bankId, ...payBody } = args;
+        if (!PAYABLE_DOC_TYPES.has(docType)) {
+          unsupportedOp('pay_document', docType);
+        }
+        const base = docBase(docType);
         const result = (await client.post(
-          `/documents/${docType}/${documentId}/pay`,
-          payBody
+          `${base}/${documentId}/payments`,
+          payBody,
+          'v2'
         )) as Record<string, unknown>;
-        // #10 — paying auto-approves the document; surface that clearly. Phrased
-        // conditionally because the document may already have been approved, in
-        // which case no state change happened.
+        // #10 — paying may auto-approve the document; surface that clearly.
         const warnings: string[] = [
           'If the document was not yet approved, registering this payment auto-approved it (status 0→1). Holded has no API to approve without payment or to un-approve afterwards.',
         ];
         // #8 — the bank link is a separate step. Resolve the new payment id from
-        // the document's paymentsDetail, then PUT /payments/{id} with bankId.
+        // the document's paymentsDetail (v2 GET), then PUT /payments/{id} with bankId.
         if (bankId) {
           try {
-            const doc = (await client.get(`/documents/${docType}/${documentId}`)) as {
+            const doc = (await client.get(`${base}/${documentId}`, undefined, 'v2')) as {
               paymentsDetail?: Array<{ id?: string }>;
             };
             const payments = Array.isArray(doc?.paymentsDetail) ? doc.paymentsDetail : [];
@@ -653,7 +697,8 @@ export function getDocumentTools(client: HoldedClient) {
 
     // Send Document
     send_document: {
-      description: 'Send a document by email',
+      description:
+        'Send a document by email (Holded API v2). Supported docTypes: invoice, salesreceipt, creditnote, receiptnote, estimate, proform, salesorder, waybill, purchaseorder. purchase and purchaserefund are not supported in v2.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -697,13 +742,17 @@ export function getDocumentTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(sendDocumentSchema, async (args) => {
         const { docType, documentId, ...body } = args;
-        return client.post(`/documents/${docType}/${documentId}/send`, body);
+        if (!SENDABLE_DOC_TYPES.has(docType)) {
+          unsupportedOp('send_document', docType);
+        }
+        return client.post(`${docBase(docType)}/${documentId}/send`, body, 'v2');
       }),
     },
 
     // Get Document PDF
     get_document_pdf: {
-      description: 'Get the PDF of a document',
+      description:
+        'Get the PDF of a document (Holded API v2). Supported docTypes: invoice, salesreceipt, creditnote, receiptnote, estimate, proform, salesorder, waybill, purchaseorder. purchase and purchaserefund are not supported in v2.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -733,13 +782,17 @@ export function getDocumentTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(documentIdSchema, async (args) => {
-        return client.get(`/documents/${args.docType}/${args.documentId}/pdf`);
+        if (!PDF_DOC_TYPES.has(args.docType)) {
+          unsupportedOp('get_document_pdf', args.docType);
+        }
+        return client.get(`${docBase(args.docType)}/${args.documentId}/pdf`, undefined, 'v2');
       }),
     },
 
     // Ship All Items
     ship_all_items: {
-      description: 'Ship all items of a document',
+      description:
+        'Ship all items of a document (Holded API v2). salesorder → POST /sales-orders/{id}/ship. purchaseorder → POST /purchase-orders/{id}/receive (receive from supplier). All other docTypes are not supported in v2.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -769,13 +822,22 @@ export function getDocumentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(documentIdSchema, async (args) => {
-        return client.post(`/documents/${args.docType}/${args.documentId}/ship`);
+        const { docType, documentId } = args;
+        if (docType === 'salesorder') {
+          return client.post(`/sales-orders/${documentId}/ship`, undefined, 'v2');
+        }
+        if (docType === 'purchaseorder') {
+          // v2 renames "ship" to "receive" for purchase orders (from supplier POV)
+          return client.post(`/purchase-orders/${documentId}/receive`, undefined, 'v2');
+        }
+        unsupportedOp('ship_all_items', docType);
       }),
     },
 
     // Ship Items by Line
     ship_items_by_line: {
-      description: 'Ship specific items by line',
+      description:
+        'Ship specific items by line (Holded API v2). salesorder only → POST /sales-orders/{id}/ship-by-lines. purchaseorder line-level receive is UNVERIFIED in v2 and throws unsupported. All other docTypes are not supported.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -816,15 +878,20 @@ export function getDocumentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(shipItemsByLineSchema, async (args) => {
-        return client.post(`/documents/${args.docType}/${args.documentId}/ship`, {
-          lines: args.lines,
-        });
+        const { docType, documentId, lines } = args;
+        if (docType === 'salesorder') {
+          // v2 has a dedicated ship-by-lines endpoint (v1 used same /ship with a `lines` body)
+          return client.post(`/sales-orders/${documentId}/ship-by-lines`, { lines }, 'v2');
+        }
+        // purchaseorder receive-by-lines is UNVERIFIED in v2 → unsupported
+        unsupportedOp('ship_items_by_line', docType);
       }),
     },
 
     // Get Shipped Units by Item
     get_shipped_units: {
-      description: 'Get shipped units by item for a document',
+      description:
+        'Get shipped/received units for a document (Holded API v2). salesorder → GET /sales-orders/{id}/shipped-items. purchaseorder → GET /purchase-orders/{id}/received-items. All other docTypes are not supported.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -854,13 +921,21 @@ export function getDocumentTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(documentIdSchema, async (args) => {
-        return client.get(`/documents/${args.docType}/${args.documentId}/shipped`);
+        const { docType, documentId } = args;
+        if (docType === 'salesorder') {
+          return client.get(`/sales-orders/${documentId}/shipped-items`, undefined, 'v2');
+        }
+        if (docType === 'purchaseorder') {
+          return client.get(`/purchase-orders/${documentId}/received-items`, undefined, 'v2');
+        }
+        unsupportedOp('get_shipped_units', docType);
       }),
     },
 
     // Attach File to Document
     attach_file_to_document: {
-      description: 'Attach a file to a document',
+      description:
+        'Attach a file to a document (Holded API v2). POST ${docBase}/{id}/attachments multipart. Supported for all docTypes except purchaserefund (v2 has no purchase-refund CRUD beyond creation).',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -899,17 +974,20 @@ export function getDocumentTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(attachFileToDocumentSchema, async (args) => {
         const buffer = Buffer.from(args.fileBase64, 'base64');
+        // docBase throws for purchaserefund (no v2 CRUD beyond creation)
         return client.uploadFile(
-          `/documents/${args.docType}/${args.documentId}/attach`,
+          `${docBase(args.docType)}/${args.documentId}/attachments`,
           buffer,
-          args.filename
+          args.filename,
+          'v2'
         );
       }),
     },
 
     // Update Tracking Info
     update_document_tracking: {
-      description: 'Update tracking information for a document',
+      description:
+        'Update tracking information for a document (Holded API v2). Supported docTypes: salesorder (PUT /sales-orders/{id}/tracking) and waybill (PUT /waybills/{id}/tracking). All other types have NO EQUIVALENT in v2 and will throw an unsupported error. NOTE: this is a discrepancy with the task brief (which stated "all types unsupported") — the normative annex tables show salesorder and waybill do have tracking in v2.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -948,13 +1026,18 @@ export function getDocumentTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateDocumentTrackingSchema, async (args) => {
         const { docType, documentId, ...body } = args;
-        return client.post(`/documents/${docType}/${documentId}/tracking`, body);
+        if (!TRACKING_DOC_TYPES.has(docType)) {
+          unsupportedOp('update_document_tracking', docType);
+        }
+        // v2 changes the verb from POST to PUT (annex tables 1.7 and 1.8)
+        return client.put(`${docBase(docType)}/${documentId}/tracking`, body, 'v2');
       }),
     },
 
     // Update Pipeline
     update_document_pipeline: {
-      description: 'Update pipeline stage for a document',
+      description:
+        'Update pipeline stage for a document (Holded API v2). Uses PUT — verb changed from POST in v1. Supported for all docTypes except purchaserefund (v2 limitation). Route: PUT ${docBase}/{id}/pipeline.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -992,16 +1075,20 @@ export function getDocumentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(updateDocumentPipelineSchema, async (args) => {
-        return client.post(`/documents/${args.docType}/${args.documentId}/pipeline`, {
-          pipelineId: args.pipelineId,
-          stageId: args.stageId,
-        });
+        // docBase throws for purchaserefund (no v2 pipeline support there)
+        // v2 changes the verb from POST to PUT (annex table 2.2)
+        return client.put(
+          `${docBase(args.docType)}/${args.documentId}/pipeline`,
+          { pipelineId: args.pipelineId, stageId: args.stageId },
+          'v2'
+        );
       }),
     },
 
     // List Payment Methods
     list_payment_methods: {
-      description: 'List available payment methods',
+      description:
+        'List available payment methods (Holded API v2). GET /payment-methods. Returns an array of {id, name, type, status, isDefault, bankingAccountId} — the v2 {items:[...]} envelope is normalized to a bare array.',
       inputSchema: {
         type: 'object' as const,
         properties: {},
@@ -1009,7 +1096,16 @@ export function getDocumentTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async () => {
-        return client.get('/paymentmethods');
+        const response = await client.get<{ items?: unknown[] } | unknown[]>(
+          '/payment-methods',
+          undefined,
+          'v2'
+        );
+        // v2 returns {items:[...]} envelope; normalize to bare array for consistency
+        if (response && !Array.isArray(response) && typeof response === 'object' && 'items' in response) {
+          return (response as { items: unknown[] }).items;
+        }
+        return response;
       },
     },
   };

@@ -207,9 +207,17 @@ export class HoldedClient {
     return this.request<T>('DELETE', endpoint, undefined, undefined, apiGroup);
   }
 
-  // File upload for attachments with retry logic
-  async uploadFile(endpoint: string, file: Buffer, filename: string): Promise<unknown> {
-    const url = `${API_BASES[DEFAULT_API_GROUP]}${endpoint}`;
+  // File upload for attachments with retry logic.
+  // apiGroup selects the base URL and auth headers; pass 'v2' for Holded API v2
+  // multipart uploads (Content-Type is omitted from buildHeaders output and set
+  // automatically by FormData so the boundary is included correctly).
+  async uploadFile(
+    endpoint: string,
+    file: Buffer,
+    filename: string,
+    apiGroup: ApiGroup = DEFAULT_API_GROUP
+  ): Promise<unknown> {
+    const url = `${API_BASES[apiGroup]}${endpoint}`;
     let lastError: Error | null = null;
 
     // Retry loop with exponential backoff
@@ -218,10 +226,14 @@ export class HoldedClient {
         const formData = new FormData();
         formData.append('file', file, filename);
 
+        // Use buildHeaders for auth, then drop Content-Type (FormData sets its own with boundary)
+        const authHeaders = { ...this.buildHeaders(apiGroup) };
+        delete authHeaders['Content-Type'];
+
         const response = await fetch(url, {
           method: 'POST',
           headers: {
-            key: this.apiKey,
+            ...authHeaders,
             ...formData.getHeaders(),
           },
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

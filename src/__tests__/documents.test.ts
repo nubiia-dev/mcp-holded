@@ -354,7 +354,7 @@ describe('Document Tools', () => {
   });
 
   describe('pay_document', () => {
-    it('should register a payment', async () => {
+    it('should register a payment via v2 route', async () => {
       const args = {
         docType: 'invoice' as const,
         documentId: 'doc-123',
@@ -362,15 +362,33 @@ describe('Document Tools', () => {
         date: 1700000000,
       };
       await tools.pay_document.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice/doc-123/pay', {
-        amount: 100,
-        date: 1700000000,
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/invoices/doc-123/payments',
+        { amount: 100, date: 1700000000 },
+        'v2'
+      );
+    });
+
+    it('throws unsupportedOp for estimate (not payable in v2)', async () => {
+      await expect(
+        tools.pay_document.handler({ docType: 'estimate' as const, documentId: 'doc-1', amount: 50 })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
+    });
+
+    it('throws unsupportedOp for salesorder (not payable in v2)', async () => {
+      await expect(
+        tools.pay_document.handler({ docType: 'salesorder' as const, documentId: 'doc-1', amount: 50 })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
+    });
+
+    it('passes for purchase (payable in v2)', async () => {
+      await tools.pay_document.handler({ docType: 'purchase' as const, documentId: 'doc-1', amount: 100 });
+      expect(client.post).toHaveBeenCalledWith('/purchases/doc-1/payments', { amount: 100 }, 'v2');
     });
   });
 
   describe('send_document', () => {
-    it('should send a document by email', async () => {
+    it('should send a document by email via v2 route', async () => {
       const args = {
         docType: 'invoice' as const,
         documentId: 'doc-123',
@@ -379,11 +397,11 @@ describe('Document Tools', () => {
         message: 'Please find attached',
       };
       await tools.send_document.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice/doc-123/send', {
-        emails: ['test@example.com'],
-        subject: 'Invoice',
-        message: 'Please find attached',
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/invoices/doc-123/send',
+        { emails: ['test@example.com'], subject: 'Invoice', message: 'Please find attached' },
+        'v2'
+      );
     });
 
     it('should send a document without emails (emails is optional)', async () => {
@@ -395,10 +413,11 @@ describe('Document Tools', () => {
         message: 'Please find attached',
       };
       await tools.send_document.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice/doc-123/send', {
-        subject: 'Invoice',
-        message: 'Please find attached',
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/invoices/doc-123/send',
+        { subject: 'Invoice', message: 'Please find attached' },
+        'v2'
+      );
     });
 
     it('should send a document with only required fields (docType and documentId)', async () => {
@@ -407,7 +426,19 @@ describe('Document Tools', () => {
         documentId: 'doc-123',
       };
       await tools.send_document.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice/doc-123/send', {});
+      expect(client.post).toHaveBeenCalledWith('/invoices/doc-123/send', {}, 'v2');
+    });
+
+    it('throws unsupportedOp for purchase (not sendable in v2)', async () => {
+      await expect(
+        tools.send_document.handler({ docType: 'purchase' as const, documentId: 'doc-1' })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
+    });
+
+    it('throws unsupportedOp for purchaserefund (not sendable in v2)', async () => {
+      await expect(
+        tools.send_document.handler({ docType: 'purchaserefund' as const, documentId: 'doc-1' })
+      ).rejects.toThrow();
     });
 
     it('should reject invalid email addresses in emails array', async () => {
@@ -428,42 +459,96 @@ describe('Document Tools', () => {
   });
 
   describe('get_document_pdf', () => {
-    it('should get document PDF', async () => {
+    it('should get document PDF via v2 route', async () => {
       await tools.get_document_pdf.handler({ docType: 'invoice', documentId: 'doc-123' });
-      expect(client.get).toHaveBeenCalledWith('/documents/invoice/doc-123/pdf');
+      expect(client.get).toHaveBeenCalledWith('/invoices/doc-123/pdf', undefined, 'v2');
+    });
+
+    it('throws unsupportedOp for purchase (no PDF in v2)', async () => {
+      await expect(
+        tools.get_document_pdf.handler({ docType: 'purchase', documentId: 'doc-1' })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
+    });
+
+    it('throws for purchaserefund (not supported in v2)', async () => {
+      await expect(
+        tools.get_document_pdf.handler({ docType: 'purchaserefund', documentId: 'doc-1' })
+      ).rejects.toThrow();
     });
   });
 
   describe('ship_all_items', () => {
-    it('should ship all items', async () => {
+    it('salesorder ships via /ship (v2)', async () => {
       await tools.ship_all_items.handler({ docType: 'salesorder', documentId: 'doc-123' });
-      expect(client.post).toHaveBeenCalledWith('/documents/salesorder/doc-123/ship');
+      expect(client.post).toHaveBeenCalledWith('/sales-orders/doc-123/ship', undefined, 'v2');
+    });
+
+    it('purchaseorder receives via /receive (v2)', async () => {
+      await tools.ship_all_items.handler({ docType: 'purchaseorder', documentId: 'doc-123' });
+      expect(client.post).toHaveBeenCalledWith('/purchase-orders/doc-123/receive', undefined, 'v2');
+    });
+
+    it('throws unsupportedOp for invoice', async () => {
+      await expect(
+        tools.ship_all_items.handler({ docType: 'invoice', documentId: 'doc-1' })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
+    });
+
+    it('throws unsupportedOp for waybill (waybills are themselves shipping docs in v2)', async () => {
+      await expect(
+        tools.ship_all_items.handler({ docType: 'waybill', documentId: 'doc-1' })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
     });
   });
 
   describe('ship_items_by_line', () => {
-    it('should ship specific items by line', async () => {
+    it('salesorder ships via /ship-by-lines (v2)', async () => {
       const args = {
         docType: 'salesorder' as const,
         documentId: 'doc-123',
         lines: [{ lineId: 'line-1', units: 5 }],
       };
       await tools.ship_items_by_line.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/salesorder/doc-123/ship', {
-        lines: [{ lineId: 'line-1', units: 5 }],
-      });
+      expect(client.post).toHaveBeenCalledWith(
+        '/sales-orders/doc-123/ship-by-lines',
+        { lines: [{ lineId: 'line-1', units: 5 }] },
+        'v2'
+      );
+    });
+
+    it('throws unsupportedOp for invoice', async () => {
+      await expect(
+        tools.ship_items_by_line.handler({ docType: 'invoice', documentId: 'doc-1', lines: [] })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
+    });
+
+    it('throws unsupportedOp for purchaseorder (receive-by-lines is UNVERIFIED in v2)', async () => {
+      await expect(
+        tools.ship_items_by_line.handler({ docType: 'purchaseorder', documentId: 'doc-1', lines: [] })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
     });
   });
 
   describe('get_shipped_units', () => {
-    it('should get shipped units', async () => {
+    it('salesorder returns shipped-items (v2)', async () => {
       await tools.get_shipped_units.handler({ docType: 'salesorder', documentId: 'doc-123' });
-      expect(client.get).toHaveBeenCalledWith('/documents/salesorder/doc-123/shipped');
+      expect(client.get).toHaveBeenCalledWith('/sales-orders/doc-123/shipped-items', undefined, 'v2');
+    });
+
+    it('purchaseorder returns received-items (v2)', async () => {
+      await tools.get_shipped_units.handler({ docType: 'purchaseorder', documentId: 'doc-123' });
+      expect(client.get).toHaveBeenCalledWith('/purchase-orders/doc-123/received-items', undefined, 'v2');
+    });
+
+    it('throws unsupportedOp for invoice', async () => {
+      await expect(
+        tools.get_shipped_units.handler({ docType: 'invoice', documentId: 'doc-1' })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
     });
   });
 
   describe('attach_file_to_document', () => {
-    it('should attach a file', async () => {
+    it('should attach a file via v2 /attachments route', async () => {
       const args = {
         docType: 'invoice' as const,
         documentId: 'doc-123',
@@ -472,15 +557,16 @@ describe('Document Tools', () => {
       };
       await tools.attach_file_to_document.handler(args);
       expect(client.uploadFile).toHaveBeenCalledWith(
-        '/documents/invoice/doc-123/attach',
+        '/invoices/doc-123/attachments',
         expect.any(Buffer),
-        'test.pdf'
+        'test.pdf',
+        'v2'
       );
     });
   });
 
   describe('update_document_tracking', () => {
-    it('should update tracking info', async () => {
+    it('salesorder tracking uses PUT /sales-orders/{id}/tracking (v2)', async () => {
       const args = {
         docType: 'salesorder' as const,
         documentId: 'doc-123',
@@ -488,15 +574,43 @@ describe('Document Tools', () => {
         carrier: 'DHL',
       };
       await tools.update_document_tracking.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/salesorder/doc-123/tracking', {
-        trackingNumber: 'TRACK123',
-        carrier: 'DHL',
-      });
+      expect(client.put).toHaveBeenCalledWith(
+        '/sales-orders/doc-123/tracking',
+        { trackingNumber: 'TRACK123', carrier: 'DHL' },
+        'v2'
+      );
+    });
+
+    it('waybill tracking uses PUT /waybills/{id}/tracking (v2)', async () => {
+      const args = {
+        docType: 'waybill' as const,
+        documentId: 'doc-123',
+        trackingNumber: 'TRACK456',
+        carrier: 'UPS',
+      };
+      await tools.update_document_tracking.handler(args);
+      expect(client.put).toHaveBeenCalledWith(
+        '/waybills/doc-123/tracking',
+        { trackingNumber: 'TRACK456', carrier: 'UPS' },
+        'v2'
+      );
+    });
+
+    it('throws unsupportedOp for invoice (tracking not in v2 for this type)', async () => {
+      await expect(
+        tools.update_document_tracking.handler({ docType: 'invoice', documentId: 'doc-1' })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
+    });
+
+    it('throws unsupportedOp for purchase', async () => {
+      await expect(
+        tools.update_document_tracking.handler({ docType: 'purchase', documentId: 'doc-1' })
+      ).rejects.toThrow(/not supported by the Holded API v2/);
     });
   });
 
   describe('update_document_pipeline', () => {
-    it('should update pipeline stage', async () => {
+    it('should update pipeline stage via PUT (v2 verb change)', async () => {
       const args = {
         docType: 'estimate' as const,
         documentId: 'doc-123',
@@ -504,17 +618,42 @@ describe('Document Tools', () => {
         stageId: 'stage-2',
       };
       await tools.update_document_pipeline.handler(args);
-      expect(client.post).toHaveBeenCalledWith('/documents/estimate/doc-123/pipeline', {
-        pipelineId: 'pipe-1',
-        stageId: 'stage-2',
+      expect(client.put).toHaveBeenCalledWith(
+        '/estimates/doc-123/pipeline',
+        { pipelineId: 'pipe-1', stageId: 'stage-2' },
+        'v2'
+      );
+    });
+
+    it('should update pipeline for invoice via PUT (v2)', async () => {
+      await tools.update_document_pipeline.handler({
+        docType: 'invoice',
+        documentId: 'inv-1',
+        pipelineId: 'p1',
+        stageId: 's1',
       });
+      expect(client.put).toHaveBeenCalledWith('/invoices/inv-1/pipeline', { pipelineId: 'p1', stageId: 's1' }, 'v2');
     });
   });
 
   describe('list_payment_methods', () => {
-    it('should list payment methods', async () => {
+    it('should list payment methods via v2 route', async () => {
       await tools.list_payment_methods.handler();
-      expect(client.get).toHaveBeenCalledWith('/paymentmethods');
+      expect(client.get).toHaveBeenCalledWith('/payment-methods', undefined, 'v2');
+    });
+
+    it('normalizes {items:[...]} envelope from v2', async () => {
+      client.get = vi.fn().mockResolvedValue({ items: [{ id: 'pm-1', name: 'Cash' }] });
+      const result = (await tools.list_payment_methods.handler()) as any;
+      expect(Array.isArray(result)).toBe(true);
+      expect(result[0].id).toBe('pm-1');
+    });
+
+    it('returns bare array when v2 returns bare array', async () => {
+      client.get = vi.fn().mockResolvedValue([{ id: 'pm-2' }]);
+      const result = (await tools.list_payment_methods.handler()) as any;
+      expect(Array.isArray(result)).toBe(true);
+      expect(result[0].id).toBe('pm-2');
     });
   });
 
@@ -1111,7 +1250,7 @@ describe('Document Tools', () => {
       expect(result._warnings.some((w: string) => /auto-approved/i.test(w))).toBe(true);
     });
 
-    it('#8 pay_document links bankId via a second PUT /payments step', async () => {
+    it('#8 pay_document links bankId via a second PUT /payments step (v2)', async () => {
       client.post = vi.fn().mockResolvedValue({ id: 'pay-result' });
       client.get = vi.fn().mockResolvedValue({ paymentsDetail: [{ id: 'paydetail-1' }] });
       client.put = vi.fn().mockResolvedValue({ status: 1 });
@@ -1121,7 +1260,8 @@ describe('Document Tools', () => {
         amount: 100,
         bankId: 'bank-9',
       })) as any;
-      expect(client.post).toHaveBeenCalledWith('/documents/invoice/doc-1/pay', { amount: 100 });
+      expect(client.post).toHaveBeenCalledWith('/invoices/doc-1/payments', { amount: 100 }, 'v2');
+      expect(client.get).toHaveBeenCalledWith('/invoices/doc-1', undefined, 'v2');
       expect(client.put).toHaveBeenCalledWith('/payments/paydetail-1', { bankId: 'bank-9' });
       expect(result._warnings.some((w: string) => /Linked bank account bank-9/.test(w))).toBe(true);
     });
