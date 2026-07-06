@@ -197,6 +197,52 @@ describe('HoldedClient', () => {
     });
   });
 
+  describe('getBinary', () => {
+    it('returns base64, contentType and bytes from a binary response', async () => {
+      const buf = new Uint8Array([1, 2, 3]).buffer;
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => 'application/pdf' },
+        arrayBuffer: async () => buf,
+      });
+      const result = await (client as any).getBinary('/invoices/doc-1/pdf');
+      expect(result.contentType).toBe('application/pdf');
+      expect(result.base64).toBe(Buffer.from(new Uint8Array([1, 2, 3])).toString('base64'));
+      expect(result.bytes).toBe(3);
+    });
+
+    it('falls back to application/octet-stream when content-type header is absent', async () => {
+      const buf = new Uint8Array([65]).buffer;
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => buf,
+      });
+      const result = await (client as any).getBinary('/invoices/doc-1/pdf');
+      expect(result.contentType).toBe('application/octet-stream');
+    });
+
+    it('throws with standard Holded error format on non-OK response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: async () => 'Not Found',
+      });
+      await expect((client as any).getBinary('/invoices/fake/pdf')).rejects.toThrow(
+        'Holded API error (404): Not Found'
+      );
+    });
+
+    it('includes scope hint on 403 response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => 'Forbidden',
+      });
+      await expect((client as any).getBinary('/invoices/doc-1/pdf')).rejects.toThrow(/scope/);
+    });
+  });
+
   describe('retry logic', () => {
     it('should retry on 429 and eventually succeed', async () => {
       mockFetch

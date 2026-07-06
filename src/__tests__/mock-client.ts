@@ -11,6 +11,11 @@ export function createMockClient() {
   vi.spyOn(client, 'patch').mockResolvedValue({ success: true });
   vi.spyOn(client, 'delete').mockResolvedValue({ success: true });
   vi.spyOn(client, 'uploadFile').mockResolvedValue({ success: true });
+  vi.spyOn(client, 'getBinary').mockResolvedValue({
+    contentType: 'application/pdf',
+    base64: 'JVBERi0=',
+    bytes: 4,
+  });
 
   return client;
 }

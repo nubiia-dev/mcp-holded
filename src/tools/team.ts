@@ -85,7 +85,9 @@ export function getTeamTools(client: HoldedClient) {
     },
 
     get_employee_contract: {
-      description: 'Get the contract details of an employee (Holded API v2).',
+      description:
+        'Get the contract details of an employee (Holded API v2). ' +
+        'A 404 response means the employee has no contract configured in Holded, not that the employee ID is wrong.',
       inputSchema: {
         type: 'object' as const,
         properties: {

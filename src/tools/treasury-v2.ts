@@ -157,7 +157,9 @@ export function getTreasuryV2Tools(client: HoldedClient) {
     },
 
     list_cash_movements: {
-      description: 'List cash movements of a treasury account (Holded API v2). Cursor-paginated.',
+      description:
+        'List cash movements of a treasury account (Holded API v2). Cursor-paginated. ' +
+        'This endpoint applies to cash-type treasury accounts only; bank and card account types return 404.',
       inputSchema: {
         type: 'object' as const,
         properties: {

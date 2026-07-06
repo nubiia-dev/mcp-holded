@@ -443,7 +443,24 @@ describe('Document Tools', () => {
   });
 
   describe('get_document_pdf', () => {
-    it('should get document PDF via v2 route', async () => {
+    it('calls getBinary for invoice PDF and returns base64 payload with filename', async () => {
+      (client as any).getBinary = vi.fn().mockResolvedValue({
+        contentType: 'application/pdf',
+        base64: 'JVBERi0=',
+        bytes: 4,
+      });
+      const result = (await tools.get_document_pdf.handler({
+        docType: 'invoice',
+        documentId: 'doc-123',
+      })) as any;
+      expect((client as any).getBinary).toHaveBeenCalledWith('/invoices/doc-123/pdf');
+      expect(result.base64).toBe('JVBERi0=');
+      expect(result.contentType).toBe('application/pdf');
+      expect(result.filename).toBe('invoice-doc-123.pdf');
+    });
+
+    it('should get document PDF via v2 route (invoice)', async () => {
+      // getBinary is already mocked in mock-client; just verify the handler resolves
       await tools.get_document_pdf.handler({ docType: 'invoice', documentId: 'doc-123' });
     });
 

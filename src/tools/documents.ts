@@ -799,7 +799,11 @@ export function getDocumentTools(client: HoldedClient) {
     // Get Document PDF
     get_document_pdf: {
       description:
-        'Get the PDF of a document (Holded API v2). Supported docTypes: invoice, salesreceipt, creditnote, receiptnote, estimate, proform, salesorder, waybill, purchaseorder. purchase and purchaserefund are not supported in v2.',
+        'Get the PDF of a document as base64-encoded binary (Holded API v2). ' +
+        'Returns { contentType, base64, bytes, filename }. ' +
+        'Supported docTypes: invoice, salesreceipt, creditnote, receiptnote, estimate, proform, salesorder, waybill, purchaseorder. ' +
+        'purchase is NOT supported — GET /purchases/{id}/pdf returns 404 for all purchases. ' +
+        'purchaserefund has no CRUD support in v2.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -814,11 +818,9 @@ export function getDocumentTools(client: HoldedClient) {
               'salesorder',
               'waybill',
               'proform',
-              'purchase',
-              'purchaserefund',
               'purchaseorder',
             ],
-            description: 'Type of document',
+            description: 'Type of document (purchase is not supported — PDF endpoint returns 404)',
           },
           documentId: {
             type: 'string',
@@ -832,7 +834,8 @@ export function getDocumentTools(client: HoldedClient) {
         if (!PDF_DOC_TYPES.has(args.docType)) {
           unsupportedOp('get_document_pdf', args.docType);
         }
-        return client.get(`${docBase(args.docType)}/${args.documentId}/pdf`, undefined);
+        const binary = await client.getBinary(`${docBase(args.docType)}/${args.documentId}/pdf`);
+        return { ...binary, filename: `${args.docType}-${args.documentId}.pdf` };
       }),
     },
 
