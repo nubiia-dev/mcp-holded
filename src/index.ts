@@ -81,6 +81,14 @@ const rateLimiter = new RateLimiter({
 // and performs a write. It is opt-in: set HOLDED_ENABLE_EXPERIMENTAL_BANKING=true.
 const EXPERIMENTAL_BANKING_ENABLED = process.env.HOLDED_ENABLE_EXPERIMENTAL_BANKING === 'true';
 
+// ListTools uses allTools (built once from the default client). To avoid hiding
+// v2 tools when only a non-default tenant has a v2 key, we gate listing on
+// whether ANY tenant has v2 configured. CallTool rebuilds tools per-tenant and
+// registers v2 tools unconditionally so the client's buildHeaders surfaces the
+// "HOLDED_API_KEY_V2 not configured" error on misconfigured tenants instead of
+// the generic "Unknown tool" error.
+const ANY_TENANT_HAS_V2 = tenantConfigs.some((c) => Boolean(c.apiKeyV2));
+
 // Collect all tools
 const allTools = {
   ...getDocumentTools(client),
@@ -99,11 +107,11 @@ const allTools = {
   ...getTimeTrackingTools(client),
   ...getAccountingTools(client),
   ...(EXPERIMENTAL_BANKING_ENABLED ? getBankingTools(client) : {}),
-  // API v2 tools: only registered when the tenant has a v2 key configured
-  // (HOLDED_API_KEY_V2 / TENANT_N_API_KEY_V2). Existing v1 users see no change.
-  ...(client.hasV2() ? getTeamTools(client) : {}),
-  ...(client.hasV2() ? getLedgerTools(client) : {}),
-  ...(client.hasV2() ? getTreasuryV2Tools(client) : {}),
+  // API v2 tools: listed when any tenant has a v2 key configured
+  // (HOLDED_API_KEY_V2 / TENANT_N_API_KEY_V2). Existing v1-only users see no change.
+  ...(ANY_TENANT_HAS_V2 ? getTeamTools(client) : {}),
+  ...(ANY_TENANT_HAS_V2 ? getLedgerTools(client) : {}),
+  ...(ANY_TENANT_HAS_V2 ? getTreasuryV2Tools(client) : {}),
 };
 
 // Create server
@@ -191,9 +199,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     ...getTimeTrackingTools(tenantContext.client),
     ...getAccountingTools(tenantContext.client),
     ...(EXPERIMENTAL_BANKING_ENABLED ? getBankingTools(tenantContext.client) : {}),
-    ...(tenantContext.client.hasV2() ? getTeamTools(tenantContext.client) : {}),
-    ...(tenantContext.client.hasV2() ? getLedgerTools(tenantContext.client) : {}),
-    ...(tenantContext.client.hasV2() ? getTreasuryV2Tools(tenantContext.client) : {}),
+    // v2 tools are registered unconditionally here. A v1-only tenant calling a
+    // v2 tool will reach the client, which surfaces the "HOLDED_API_KEY_V2 not
+    // configured" config error from buildHeaders instead of "Unknown tool".
+    ...getTeamTools(tenantContext.client),
+    ...getLedgerTools(tenantContext.client),
+    ...getTreasuryV2Tools(tenantContext.client),
   };
 
   const tool = tenantTools[name as keyof typeof tenantTools];
