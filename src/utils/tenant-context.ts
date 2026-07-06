@@ -7,6 +7,7 @@ export interface TenantConfig {
   id: string;
   name: string;
   apiKey: string;
+  apiKeyV2?: string;
   enabled: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -36,7 +37,7 @@ export class TenantManager {
       throw new Error(`Tenant '${config.id}' is already registered`);
     }
 
-    const client = new HoldedClient(config.apiKey);
+    const client = new HoldedClient(config.apiKey, config.apiKeyV2);
     const context: TenantContext = {
       tenantId: config.id,
       client,

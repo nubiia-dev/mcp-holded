@@ -38,6 +38,7 @@ export function loadTenantConfigs(): TenantConfig[] {
       const name = process.env[`TENANT_${id}_NAME`];
       const apiKey = process.env[`TENANT_${id}_API_KEY`];
       const enabledStr = process.env[`TENANT_${id}_ENABLED`];
+      const apiKeyV2 = process.env[`TENANT_${id}_API_KEY_V2`] || undefined;
 
       if (!name || !apiKey) {
         console.error(
@@ -52,6 +53,7 @@ export function loadTenantConfigs(): TenantConfig[] {
         id: `tenant_${id}`,
         name,
         apiKey,
+        apiKeyV2,
         enabled,
         metadata: {
           source: 'environment',
@@ -67,10 +69,12 @@ export function loadTenantConfigs(): TenantConfig[] {
   // Single tenant mode (legacy)
   const apiKey = process.env.HOLDED_API_KEY;
   if (apiKey) {
+    const apiKeyV2 = process.env.HOLDED_API_KEY_V2 || undefined;
     configs.push({
       id: 'default',
       name: 'Default Organization',
       apiKey,
+      apiKeyV2,
       enabled: true,
       metadata: {
         source: 'environment',
