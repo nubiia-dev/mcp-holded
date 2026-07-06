@@ -1,11 +1,12 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List } from '../utils/v2-pagination.js';
 
 export function getTaxTools(client: HoldedClient) {
   return {
     // Get Taxes
     get_taxes: {
       description:
-        'Get all available taxes with pagination support. Supports field filtering to reduce response size. Each tax has: `key` (the stable identifier, e.g. "s_iva_21"/"p_iva_21" — this is the value used in a document line\'s `taxes[]`), `id` (mirrors `key`), `name`, `amount` (the percentage as a string, e.g. "21"), `scope` ("sales" or "purchase"), `group` (e.g. "iva"), and `type`.',
+        'Get all available taxes (Holded API v2). Cursor-paginated at server level; this tool fetches the full list and applies virtual page/pageSize slicing on top. Amounts are strings with decimal comma. Each tax has: `key` (the stable identifier, e.g. "s_iva_21"/"p_iva_21" — this is the value used in a document line\'s `taxes[]`), `id` (mirrors `key`), `name`, `amount` (the percentage as a string, e.g. "21"), `scope` ("sales" or "purchase"), `group` (e.g. "iva"), and `type`.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -34,7 +35,9 @@ export function getTaxTools(client: HoldedClient) {
       handler: async (
         args: { page?: number; pageSize?: number; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const taxes = (await client.get('/taxes')) as Array<Record<string, unknown>>;
+        const v2Response = await client.get('/taxes', undefined, 'v2');
+        const normalized = normalizeV2List(v2Response);
+        const taxes = normalized.items as Array<Record<string, unknown>>;
 
         // Field filtering: if fields specified, return only those fields.
         // Otherwise, return a default set using the API's real field names
@@ -53,7 +56,7 @@ export function getTaxTools(client: HoldedClient) {
           return result;
         });
 
-        // Pagination
+        // Virtual pagination on top of the v2 items
         const page = Math.max(args.page ?? 1, 1);
         const pageSize = Math.min(args.pageSize ?? 50, 500);
         const total = filtered.length;

@@ -1,4 +1,5 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 import {
   paymentIdSchema,
   createPaymentSchema,
@@ -11,17 +12,17 @@ export function getPaymentTools(client: HoldedClient) {
     // List Payments
     list_payments: {
       description:
-        "List all payments with optional filters for date range. Supports field filtering to reduce response size. NOTE: this endpoint is filtered to the ACTIVE fiscal year, so payments made in a prior year do NOT appear here even if they are linked to documents. For cross-year payment audits, read a document's payments via get_document_payments (the document `paymentsDetail`).",
+        'List all payments (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma. NOTE: this endpoint is filtered to the ACTIVE fiscal year, so payments made in a prior year do NOT appear here even if they are linked to documents. For cross-year payment audits, read a document\'s payments via get_document_payments (the document `paymentsDetail`). Date filter params (starttmp/endtmp) are forwarded as-is; date filter params pending live verification.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          page: {
-            type: 'number',
-            description: 'Page number for pagination (optional)',
-          },
           limit: {
             type: 'number',
-            description: 'Maximum number of items to return (default: 50, max: 500)',
+            description: 'Max items per page (API caps at 100)',
+          },
+          cursor: {
+            type: 'string',
+            description: 'Cursor from a previous response nextCursor',
           },
           summary: {
             type: 'boolean',
@@ -31,15 +32,15 @@ export function getPaymentTools(client: HoldedClient) {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "name", "days", "discount"]). Reduces response size by 70-90%. If not provided, returns default fields: id, name, days, discount',
+              'Select specific fields to return (e.g., ["id", "name", "days", "discount"]). Reduces response size. If not provided, returns all fields from the API.',
           },
           starttmp: {
             type: 'string',
-            description: 'Starting timestamp (Unix timestamp) for filtering payments by date',
+            description: 'Starting timestamp (Unix timestamp) for filtering payments by date (pending live verification)',
           },
           endtmp: {
             type: 'string',
-            description: 'Ending timestamp (Unix timestamp) for filtering payments by date',
+            description: 'Ending timestamp (Unix timestamp) for filtering payments by date (pending live verification)',
           },
         },
         required: [],
@@ -47,67 +48,48 @@ export function getPaymentTools(client: HoldedClient) {
       readOnlyHint: true,
       handler: async (
         args: {
-          page?: number;
           limit?: number;
+          cursor?: string;
           summary?: boolean;
           fields?: string[];
           starttmp?: string;
           endtmp?: string;
         } = {}
       ) => {
-        const queryParams: Record<string, string | number> = {};
-        if (args.page) queryParams.page = args.page;
-        if (args.limit) queryParams.limit = Math.min(args.limit, 500);
+        const params = cursorParams(args);
         if (args.starttmp) {
-          queryParams.starttmp = args.starttmp;
+          params.starttmp = args.starttmp;
           // If starttmp is provided but endtmp is not, default to current timestamp
           if (!args.endtmp) {
-            queryParams.endtmp = Math.floor(Date.now() / 1000).toString();
+            params.endtmp = Math.floor(Date.now() / 1000).toString();
           }
         }
-        if (args.endtmp) queryParams.endtmp = args.endtmp;
-        const payments = (await client.get('/payments', queryParams)) as Array<
-          Record<string, unknown>
-        >;
+        if (args.endtmp) params.endtmp = args.endtmp;
 
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['id', 'name', 'days', 'discount'];
-        const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
+        const result = normalizeV2List(await client.get('/payments', params, 'v2'));
 
-        const filtered = payments.map((payment) => {
-          const result: Record<string, unknown> = {};
-          for (const field of fieldsToInclude) {
-            if (field in payment) {
-              result[field] = payment[field];
-            }
-          }
-          return result;
-        });
+        if (args.fields?.length) {
+          result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
+            const picked: Record<string, unknown> = {};
+            for (const f of args.fields as string[]) if (f in item) picked[f] = item[f];
+            return picked;
+          });
+        }
 
-        const limit = Math.min(args.limit ?? 50, 500);
-        const items = filtered.slice(0, limit);
-
-        // Summary mode: return only count and metadata
         if (args.summary) {
-          return {
-            count: items.length,
-            hasMore: items.length === limit && filtered.length > limit,
-          };
+          const out: Record<string, unknown> = { count: result.items.length };
+          if (result.nextCursor) out.nextCursor = result.nextCursor;
+          if (result.hasMore !== undefined) out.hasMore = result.hasMore;
+          return out;
         }
 
-        return {
-          items,
-          page: args.page,
-          pageSize: items.length,
-          hasMore: items.length === limit && filtered.length > limit,
-        };
+        return result;
       },
     },
 
     // Create Payment
     create_payment: {
-      description: 'Create a new payment',
+      description: 'Create a new payment (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -124,13 +106,13 @@ export function getPaymentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createPaymentSchema, async (args) => {
-        return client.post('/payments', args);
+        return client.post('/payments', args, 'v2');
       }),
     },
 
     // Get Payment
     get_payment: {
-      description: 'Get a specific payment by ID',
+      description: 'Get a specific payment by ID (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -143,14 +125,14 @@ export function getPaymentTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(paymentIdSchema, async (args) => {
-        return client.get(`/payments/${args.paymentId}`);
+        return client.get(`/payments/${args.paymentId}`, undefined, 'v2');
       }),
     },
 
     // Update Payment
     update_payment: {
       description:
-        "Update an existing payment. IMPORTANT: Holded's PUT /payments/{id} REPLACES the record rather than merging, so any field omitted from the body is blanked. To prevent that, this tool first re-reads the current payment and merges your changes over it, preserving fields you did not pass (contactId, bankId, date, ...).",
+        "Update an existing payment (Holded API v2). IMPORTANT: Holded's PUT /payments/{id} REPLACES the record rather than merging, so any field omitted from the body is blanked. To prevent that, this tool first re-reads the current payment and merges your changes over it, preserving fields you did not pass (contactId, bankId, date, ...).",
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -192,7 +174,7 @@ export function getPaymentTools(client: HoldedClient) {
         // changes over the current payment so unspecified fields aren't blanked.
         let base: Record<string, unknown> = {};
         try {
-          const current = await client.get(`/payments/${paymentId}`);
+          const current = await client.get(`/payments/${paymentId}`, undefined, 'v2');
           if (current && typeof current === 'object' && !Array.isArray(current)) {
             base = { ...(current as Record<string, unknown>) };
             delete base.id;
@@ -200,13 +182,13 @@ export function getPaymentTools(client: HoldedClient) {
         } catch {
           // If the current payment can't be fetched, fall back to a plain update.
         }
-        return client.put(`/payments/${paymentId}`, { ...base, ...updates });
+        return client.put(`/payments/${paymentId}`, { ...base, ...updates }, 'v2');
       }),
     },
 
     // Delete Payment
     delete_payment: {
-      description: 'Delete a payment',
+      description: 'Delete a payment (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -219,7 +201,7 @@ export function getPaymentTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(paymentIdSchema, async (args) => {
-        return client.delete(`/payments/${args.paymentId}`);
+        return client.delete(`/payments/${args.paymentId}`, 'v2');
       }),
     },
   };

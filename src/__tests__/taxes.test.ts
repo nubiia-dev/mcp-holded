@@ -37,13 +37,13 @@ describe('Tax Tools', () => {
   ];
 
   describe('get_taxes', () => {
-    it('should get all taxes', async () => {
+    it('should get all taxes via v2', async () => {
       await tools.get_taxes.handler({});
-      expect(client.get).toHaveBeenCalledWith('/taxes');
+      expect(client.get).toHaveBeenCalledWith('/taxes', undefined, 'v2');
     });
 
     it('surfaces the identifier (key/id) and rate (amount) in default fields', async () => {
-      (client.get as any).mockResolvedValue(sampleTaxes);
+      (client.get as any).mockResolvedValue({ items: sampleTaxes });
 
       const result = (await tools.get_taxes.handler({})) as {
         items: Array<Record<string, unknown>>;
@@ -65,7 +65,7 @@ describe('Tax Tools', () => {
     });
 
     it('returns only the requested fields when `fields` is provided', async () => {
-      (client.get as any).mockResolvedValue(sampleTaxes);
+      (client.get as any).mockResolvedValue({ items: sampleTaxes });
 
       const result = (await tools.get_taxes.handler({ fields: ['key', 'amount'] })) as {
         items: Array<Record<string, unknown>>;
@@ -76,7 +76,7 @@ describe('Tax Tools', () => {
     });
 
     it('omits fields that are absent from the API response', async () => {
-      (client.get as any).mockResolvedValue([{ key: 's_iva_0', name: 'Exempt' }]);
+      (client.get as any).mockResolvedValue({ items: [{ key: 's_iva_0', name: 'Exempt' }] });
 
       const result = (await tools.get_taxes.handler({})) as {
         items: Array<Record<string, unknown>>;
@@ -87,7 +87,7 @@ describe('Tax Tools', () => {
     });
 
     it('returns only counts in summary mode', async () => {
-      (client.get as any).mockResolvedValue(sampleTaxes);
+      (client.get as any).mockResolvedValue({ items: sampleTaxes });
 
       const result = (await tools.get_taxes.handler({ summary: true })) as {
         total: number;
@@ -98,7 +98,7 @@ describe('Tax Tools', () => {
     });
 
     it('paginates results', async () => {
-      (client.get as any).mockResolvedValue(sampleTaxes);
+      (client.get as any).mockResolvedValue({ items: sampleTaxes });
 
       const result = (await tools.get_taxes.handler({ page: 2, pageSize: 1 })) as {
         items: Array<Record<string, unknown>>;

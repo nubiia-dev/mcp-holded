@@ -1,4 +1,5 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 import {
   serviceIdSchema,
   createServiceSchema,
@@ -11,17 +12,17 @@ export function getServiceTools(client: HoldedClient) {
     // List Services
     list_services: {
       description:
-        'List all services with optional pagination. Supports field filtering to reduce response size.',
+        'List all services (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma. Supports field filtering to reduce response size.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          page: {
-            type: 'number',
-            description: 'Page number for pagination (optional)',
-          },
           limit: {
             type: 'number',
-            description: 'Maximum number of items to return (default: 50, max: 500)',
+            description: 'Max items per page (API caps at 100)',
+          },
+          cursor: {
+            type: 'string',
+            description: 'Cursor from a previous response nextCursor',
           },
           summary: {
             type: 'boolean',
@@ -31,60 +32,39 @@ export function getServiceTools(client: HoldedClient) {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "name", "price", "tax"]). Reduces response size by 70-90%. If not provided, returns default fields: id, name, price, tax',
+              'Project only these fields per item (e.g. ["id", "name", "price", "tax"]). Reduces response size.',
           },
         },
         required: [],
       },
       readOnlyHint: true,
       handler: async (
-        args: { page?: number; limit?: number; summary?: boolean; fields?: string[] } = {}
+        args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const queryParams: Record<string, string | number> = {};
-        if (args.page) queryParams.page = args.page;
-        if (args.limit) queryParams.limit = Math.min(args.limit, 500);
-        const services = (await client.get('/services', queryParams)) as Array<
-          Record<string, unknown>
-        >;
+        const result = normalizeV2List(await client.get('/services', cursorParams(args), 'v2'));
 
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['id', 'name', 'price', 'tax'];
-        const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
-
-        const filtered = services.map((service) => {
-          const result: Record<string, unknown> = {};
-          for (const field of fieldsToInclude) {
-            if (field in service) {
-              result[field] = service[field];
-            }
-          }
-          return result;
-        });
-
-        const limit = Math.min(args.limit ?? 50, 500);
-        const items = filtered.slice(0, limit);
-
-        // Summary mode: return only count and metadata
-        if (args.summary) {
-          return {
-            count: items.length,
-            hasMore: items.length === limit && filtered.length > limit,
-          };
+        if (args.fields?.length) {
+          result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
+            const picked: Record<string, unknown> = {};
+            for (const f of args.fields as string[]) if (f in item) picked[f] = item[f];
+            return picked;
+          });
         }
 
-        return {
-          items,
-          page: args.page,
-          pageSize: items.length,
-          hasMore: items.length === limit && filtered.length > limit,
-        };
+        if (args.summary) {
+          const out: Record<string, unknown> = { count: result.items.length };
+          if (result.nextCursor) out.nextCursor = result.nextCursor;
+          if (result.hasMore !== undefined) out.hasMore = result.hasMore;
+          return out;
+        }
+
+        return result;
       },
     },
 
     // Create Service
     create_service: {
-      description: 'Create a new service',
+      description: 'Create a new service (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -113,13 +93,13 @@ export function getServiceTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(createServiceSchema, async (args) => {
-        return client.post('/services', args);
+        return client.post('/services', args, 'v2');
       }),
     },
 
     // Get Service
     get_service: {
-      description: 'Get a specific service by ID',
+      description: 'Get a specific service by ID (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -132,13 +112,13 @@ export function getServiceTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: withValidation(serviceIdSchema, async (args) => {
-        return client.get(`/services/${args.serviceId}`);
+        return client.get(`/services/${args.serviceId}`, undefined, 'v2');
       }),
     },
 
     // Update Service
     update_service: {
-      description: 'Update an existing service',
+      description: 'Update an existing service (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -172,13 +152,13 @@ export function getServiceTools(client: HoldedClient) {
       destructiveHint: true,
       handler: withValidation(updateServiceSchema, async (args) => {
         const { serviceId, ...body } = args;
-        return client.put(`/services/${serviceId}`, body);
+        return client.put(`/services/${serviceId}`, body, 'v2');
       }),
     },
 
     // Delete Service
     delete_service: {
-      description: 'Delete a service',
+      description: 'Delete a service (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -191,7 +171,7 @@ export function getServiceTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: withValidation(serviceIdSchema, async (args) => {
-        return client.delete(`/services/${args.serviceId}`);
+        return client.delete(`/services/${args.serviceId}`, 'v2');
       }),
     },
   };

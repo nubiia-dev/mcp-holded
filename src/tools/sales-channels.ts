@@ -1,86 +1,66 @@
 import { HoldedClient } from '../holded-client.js';
+import { normalizeV2List, cursorParams } from '../utils/v2-pagination.js';
 
 export function getSalesChannelTools(client: HoldedClient) {
   return {
     // List Sales Channels
     list_sales_channels: {
       description:
-        'List all sales channels with pagination support. Supports field filtering to reduce response size.',
+        'List all sales channels (Holded API v2). Cursor-paginated: pass the previous response nextCursor as cursor. Response fields are snake_case; amounts are strings with decimal comma. Supports field filtering to reduce response size.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          page: {
+          limit: {
             type: 'number',
-            description: 'Page number (starting from 1, default: 1)',
+            description: 'Max items per page (API caps at 100)',
           },
-          pageSize: {
-            type: 'number',
-            description: 'Number of items per page (default: 50, max: 500)',
+          cursor: {
+            type: 'string',
+            description: 'Cursor from a previous response nextCursor',
           },
           summary: {
             type: 'boolean',
-            description: 'Return only total count and page count without items (default: false)',
+            description: 'Return only count and pagination metadata without items (default: false)',
           },
           fields: {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Select specific fields to return (e.g., ["id", "name"]). Reduces response size by 70-90%. If not provided, returns default fields: id, name',
+              'Project only these fields per item (e.g. ["id", "name"]). Reduces response size.',
           },
         },
         required: [],
       },
       readOnlyHint: true,
       handler: async (
-        args: { page?: number; pageSize?: number; summary?: boolean; fields?: string[] } = {}
+        args: { limit?: number; cursor?: string; summary?: boolean; fields?: string[] } = {}
       ) => {
-        const channels = (await client.get('/saleschannels')) as Array<Record<string, unknown>>;
+        const result = normalizeV2List(
+          await client.get('/sales-channels', cursorParams(args), 'v2')
+        );
 
-        // Field filtering: if fields specified, return only those fields
-        // Otherwise, return default minimal set
-        const defaultFields = ['id', 'name'];
-        const fieldsToInclude = args.fields && args.fields.length > 0 ? args.fields : defaultFields;
-
-        const filtered = channels.map((channel) => {
-          const result: Record<string, unknown> = {};
-          for (const field of fieldsToInclude) {
-            if (field in channel) {
-              result[field] = channel[field];
-            }
-          }
-          return result;
-        });
-
-        // Pagination
-        const page = Math.max(args.page ?? 1, 1);
-        const pageSize = Math.min(args.pageSize ?? 50, 500);
-        const total = filtered.length;
-        const totalPages = Math.ceil(total / pageSize);
-        const startIndex = (page - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const items = filtered.slice(startIndex, endIndex);
-
-        // Summary mode: return only metadata
-        if (args.summary) {
-          return {
-            total,
-            totalPages,
-          };
+        if (args.fields?.length) {
+          result.items = (result.items as Array<Record<string, unknown>>).map((item) => {
+            const picked: Record<string, unknown> = {};
+            for (const f of args.fields as string[]) if (f in item) picked[f] = item[f];
+            return picked;
+          });
         }
 
-        return {
-          items,
-          page,
-          pageSize,
-          total,
-          totalPages,
-        };
+        if (args.summary) {
+          const out: Record<string, unknown> = { count: result.items.length };
+          if (result.nextCursor) out.nextCursor = result.nextCursor;
+          if (result.hasMore !== undefined) out.hasMore = result.hasMore;
+          return out;
+        }
+
+        return result;
       },
     },
 
     // Create Sales Channel
     create_sales_channel: {
-      description: 'Create a new sales channel',
+      description: 'Create a new sales channel (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -93,13 +73,13 @@ export function getSalesChannelTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: Record<string, unknown>) => {
-        return client.post('/saleschannels', args);
+        return client.post('/sales-channels', args, 'v2');
       },
     },
 
     // Get Sales Channel
     get_sales_channel: {
-      description: 'Get a specific sales channel by ID',
+      description: 'Get a specific sales channel by ID (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -112,13 +92,13 @@ export function getSalesChannelTools(client: HoldedClient) {
       },
       readOnlyHint: true,
       handler: async (args: { channelId: string }) => {
-        return client.get(`/saleschannels/${args.channelId}`);
+        return client.get(`/sales-channels/${args.channelId}`, undefined, 'v2');
       },
     },
 
     // Update Sales Channel
     update_sales_channel: {
-      description: 'Update an existing sales channel',
+      description: 'Update an existing sales channel (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -136,13 +116,13 @@ export function getSalesChannelTools(client: HoldedClient) {
       destructiveHint: true,
       handler: async (args: { channelId: string; [key: string]: unknown }) => {
         const { channelId, ...body } = args;
-        return client.put(`/saleschannels/${channelId}`, body);
+        return client.put(`/sales-channels/${channelId}`, body, 'v2');
       },
     },
 
     // Delete Sales Channel
     delete_sales_channel: {
-      description: 'Delete a sales channel',
+      description: 'Delete a sales channel (Holded API v2)',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -155,7 +135,7 @@ export function getSalesChannelTools(client: HoldedClient) {
       },
       destructiveHint: true,
       handler: async (args: { channelId: string }) => {
-        return client.delete(`/saleschannels/${args.channelId}`);
+        return client.delete(`/sales-channels/${args.channelId}`, 'v2');
       },
     },
   };
