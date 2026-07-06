@@ -135,7 +135,7 @@ export function getTreasuryV2Tools(client: HoldedClient) {
 
     reconcile_bank_movement: {
       description:
-        `WRITE: reconciles a bank movement against documents/entries (Holded API v2, official endpoint — replaces the experimental reconcile_bank_movement from the internal API when v2 is enabled). ` +
+        `WRITE: reconciles a bank movement against documents/entries (Holded API v2, official endpoint — replaces the experimental reconcile_bank_transaction from the internal API when v2 is enabled). ` +
         `\`data\` is sent verbatim as the request body — see ${DOC_URL} (Tesorería → Conciliar).`,
       inputSchema: {
         type: 'object' as const,

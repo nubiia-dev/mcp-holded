@@ -13,9 +13,10 @@ describe('Treasury v2 Tools — bank accounts & movements', () => {
   });
 
   it('list_bank_accounts lists on v2', async () => {
-    (client.get as any).mockResolvedValue({ items: [] });
-    await tools.list_bank_accounts.handler({});
+    (client.get as any).mockResolvedValue({ items: [{ id: 'a1' }], nextCursor: 'n1' });
+    const result = await tools.list_bank_accounts.handler({});
     expect(client.get).toHaveBeenCalledWith('/treasury/accounts', {}, 'v2');
+    expect(result).toEqual({ items: [{ id: 'a1' }], nextCursor: 'n1' });
   });
 
   it('bank account CRUD and archive hit the right routes', async () => {
@@ -37,13 +38,14 @@ describe('Treasury v2 Tools — bank accounts & movements', () => {
   });
 
   it('movement tools address the account subresources', async () => {
-    (client.get as any).mockResolvedValue({ items: [] });
-    await tools.list_bank_movements.handler({ accountId: 'a1', limit: 50 });
+    (client.get as any).mockResolvedValue([{ id: 'm1' }]);
+    const bankMovementsResult = await tools.list_bank_movements.handler({ accountId: 'a1', limit: 50 });
     expect(client.get).toHaveBeenCalledWith(
       '/treasury/accounts/a1/bank-movements',
       { limit: 50 },
       'v2'
     );
+    expect(bankMovementsResult).toEqual({ items: [{ id: 'm1' }] });
 
     const data = { amount: -120.5, concept: 'AWS June' };
     await tools.create_bank_movement.handler({ accountId: 'a1', data });
@@ -56,7 +58,9 @@ describe('Treasury v2 Tools — bank accounts & movements', () => {
       'v2'
     );
 
-    await tools.list_cash_movements.handler({ accountId: 'a1' });
+    (client.get as any).mockResolvedValue({ items: [] });
+    const cashMovementsResult = await tools.list_cash_movements.handler({ accountId: 'a1' });
     expect(client.get).toHaveBeenCalledWith('/treasury/accounts/a1/cash-movements', {}, 'v2');
+    expect(cashMovementsResult).toEqual({ items: [] });
   });
 });
