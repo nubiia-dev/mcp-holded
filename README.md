@@ -111,6 +111,8 @@ Add to your Claude Desktop config file:
 **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
+`HOLDED_API_KEY_V2` is optional — omit it if you don't use the v2 tools (Team/HR, Ledger, Treasury v2).
+
 ```json
 {
   "mcpServers": {
@@ -127,6 +129,8 @@ Add to your Claude Desktop config file:
 ```
 
 Or if installed from source:
+
+`HOLDED_API_KEY_V2` is optional — omit it if you don't use the v2 tools (Team/HR, Ledger, Treasury v2).
 
 ```json
 {
