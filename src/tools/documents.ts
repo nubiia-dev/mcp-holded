@@ -349,7 +349,12 @@ export function getDocumentTools(client: HoldedClient) {
                 `${docBase(docType)}/${newId}`,
                 undefined
               )) as Record<string, unknown>;
-              const persisted = created?.invoiceNum ?? created?.docNumber;
+              const persisted =
+                created?.invoiceNum ??
+                created?.docNumber ??
+                created?.invoice_num ??
+                created?.doc_number ??
+                created?.document_number;
               if (persisted !== undefined && persisted !== body.invoiceNum) {
                 warnings.push(
                   `Requested invoiceNum "${body.invoiceNum}" was overridden by the numbering series to "${String(persisted)}".`
@@ -690,13 +695,37 @@ export function getDocumentTools(client: HoldedClient) {
         // the document's paymentsDetail (v2 GET), then PUT /payments/{id} with bankId.
         if (bankId) {
           try {
-            const doc = (await client.get(`${base}/${documentId}`, undefined)) as {
-              paymentsDetail?: Array<{ id?: string }>;
-            };
-            const payments = Array.isArray(doc?.paymentsDetail) ? doc.paymentsDetail : [];
+            const doc = (await client.get(`${base}/${documentId}`, undefined)) as Record<
+              string,
+              unknown
+            >;
+            const paymentsData =
+              (doc?.paymentsDetail as Array<{ id?: string }> | undefined) ??
+              (doc?.payments_detail as Array<{ id?: string }> | undefined) ??
+              (doc?.payments as Array<{ id?: string }> | undefined);
+            const payments = Array.isArray(paymentsData) ? paymentsData : [];
             const newest = payments[payments.length - 1];
             if (newest?.id) {
-              await client.put(`/payments/${newest.id}`, { bankId });
+              // #F1 — PUT /payments/{id} has replace semantics; merge over the
+              // current payment record so amount/date/contact are not blanked.
+              let paymentBase: Record<string, unknown> = {};
+              try {
+                const currentPayment = (await client.get(
+                  `/payments/${newest.id}`,
+                  undefined
+                )) as Record<string, unknown>;
+                if (
+                  currentPayment &&
+                  typeof currentPayment === 'object' &&
+                  !Array.isArray(currentPayment)
+                ) {
+                  paymentBase = { ...currentPayment };
+                  delete paymentBase.id;
+                }
+              } catch {
+                // Fall back to bare bankId if payment read fails.
+              }
+              await client.put(`/payments/${newest.id}`, { ...paymentBase, bankId });
               warnings.push(`Linked bank account ${bankId} to payment ${newest.id}.`);
             } else {
               warnings.push(

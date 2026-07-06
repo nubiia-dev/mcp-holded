@@ -1201,7 +1201,11 @@ describe('Document Tools', () => {
 
     it('#8 pay_document links bankId via a second PUT /payments step (v2)', async () => {
       client.post = vi.fn().mockResolvedValue({ id: 'pay-result' });
-      client.get = vi.fn().mockResolvedValue({ paymentsDetail: [{ id: 'paydetail-1' }] });
+      client.get = vi.fn().mockImplementation((url: string) => {
+        if (url === '/payments/paydetail-1')
+          return Promise.resolve({ id: 'paydetail-1', amount: 100, date: 1700000000 });
+        return Promise.resolve({ paymentsDetail: [{ id: 'paydetail-1' }] });
+      });
       client.put = vi.fn().mockResolvedValue({ status: 1 });
       const result = (await tools.pay_document.handler({
         docType: 'invoice' as const,
@@ -1210,6 +1214,74 @@ describe('Document Tools', () => {
         bankId: 'bank-9',
       })) as any;
       expect(result._warnings.some((w: string) => /Linked bank account bank-9/.test(w))).toBe(true);
+      // #F1 — verify the PUT merges the existing payment (amount preserved) rather than bare {bankId}
+      expect(client.put).toHaveBeenCalledWith(
+        '/payments/paydetail-1',
+        expect.objectContaining({ amount: 100, bankId: 'bank-9' })
+      );
+    });
+
+    it('#F1 pay_document bankId PUT body merges existing payment fields (read-then-merge)', async () => {
+      client.post = vi.fn().mockResolvedValue({ id: 'pay-result' });
+      client.get = vi.fn().mockImplementation((url: string) => {
+        if (url === '/payments/p1')
+          return Promise.resolve({ id: 'p1', amount: 250, date: 'x', contactId: 'c1' });
+        return Promise.resolve({ paymentsDetail: [{ id: 'p1' }] });
+      });
+      client.put = vi.fn().mockResolvedValue({ status: 1 });
+      await tools.pay_document.handler({
+        docType: 'invoice' as const,
+        documentId: 'doc-99',
+        amount: 250,
+        bankId: 'bank-42',
+      });
+      expect(client.put).toHaveBeenCalledWith(
+        '/payments/p1',
+        expect.objectContaining({ amount: 250, date: 'x', contactId: 'c1', bankId: 'bank-42' })
+      );
+      // id must NOT appear in the PUT body
+      const putBody = (client.put as ReturnType<typeof vi.fn>).mock.calls[0][1] as Record<
+        string,
+        unknown
+      >;
+      expect(putBody).not.toHaveProperty('id');
+    });
+
+    it('#F2 pay_document resolves payment via snake_case payments_detail field', async () => {
+      client.post = vi.fn().mockResolvedValue({ id: 'pay-result' });
+      client.get = vi.fn().mockImplementation((url: string) => {
+        if (url === '/payments/psnake')
+          return Promise.resolve({ id: 'psnake', amount: 75, date: 'y' });
+        // v2 response uses snake_case payments_detail
+        return Promise.resolve({ payments_detail: [{ id: 'psnake' }] });
+      });
+      client.put = vi.fn().mockResolvedValue({ status: 1 });
+      const result = (await tools.pay_document.handler({
+        docType: 'invoice' as const,
+        documentId: 'doc-snake',
+        amount: 75,
+        bankId: 'bank-s',
+      })) as any;
+      expect(result._warnings.some((w: string) => /Linked bank account bank-s/.test(w))).toBe(true);
+      expect(client.put).toHaveBeenCalledWith(
+        '/payments/psnake',
+        expect.objectContaining({ amount: 75, bankId: 'bank-s' })
+      );
+    });
+
+    it('#F2 create_document warning fires when v2 response returns document_number (snake_case)', async () => {
+      client.post = vi.fn().mockResolvedValue({ id: 'doc-new' });
+      // v2 API returns snake_case document_number instead of camelCase invoiceNum
+      client.get = vi.fn().mockResolvedValue({ document_number: 'FAC-2025-0042' });
+      const result = (await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'contact-1',
+        items: [{ name: 'Service', units: 1, subtotal: 100 }],
+        date: 1700000000,
+        invoiceNum: 'MY-CUSTOM-1',
+      })) as any;
+      expect(result._warnings).toBeDefined();
+      expect(result._warnings[0]).toMatch(/overridden/);
     });
 
     it('#14 get_document_payments returns the document paymentsDetail', async () => {
