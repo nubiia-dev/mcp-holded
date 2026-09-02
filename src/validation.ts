@@ -629,6 +629,114 @@ export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown): T {
 /**
  * Type-safe validation wrapper for tool handlers
  */
+// ---------------------------------------------------------------------------
+// Recurring invoices (facturas recurrentes) — Holded API v2 /recurring-invoices
+// ---------------------------------------------------------------------------
+
+/** Recurrence interval codes accepted by the v2 API. */
+export const periodicityEnum = z.enum(['d', 'w', 'bw', 'm', 'bm', 'q', 'ba', 'a']);
+
+// Dates on these endpoints are ISO `YYYY-MM-DD`; isoDateSchema above already
+// validates the format and rejects impossible calendar dates.
+
+export const recurringInvoiceIdSchema = z.object({
+  recurringInvoiceId: z.string().min(1),
+});
+
+export const listRecurringInvoicesSchema = z
+  .object({
+    contactId: z.string().optional(),
+    cursor: z.string().optional(),
+  })
+  .merge(paginationSchema)
+  .merge(fieldFilteringSchema);
+
+export const recurringScheduleSchema = recurringInvoiceIdSchema.merge(
+  z.object({ until: isoDateSchema.optional() })
+);
+
+export const skipRecurringOccurrenceSchema = recurringInvoiceIdSchema.merge(
+  z.object({ date: isoDateSchema.optional() })
+);
+
+/**
+ * One line of a recurring invoice. The documented body is SMALLER than a regular
+ * document line: no retention, weight, cost price or unit type. `.strict()` is
+ * deliberate here, so a field the endpoint does not accept fails loudly instead
+ * of being posted and dropped without trace.
+ */
+export const recurringItemSchema = z
+  .object({
+    name: z.string(),
+    units: z.number(),
+    price: z.number().optional(),
+    /** Legacy alias for `price`; it is the UNIT price, not the line total. */
+    subtotal: z.number().optional(),
+    desc: z.string().optional(),
+    type: z.enum(['product', 'service', 'title']).optional(),
+    discount: z.number().min(0).max(100).optional(),
+    taxes: z.array(z.string()).min(1).optional(),
+    tags: z.array(z.string()).optional(),
+    sku: z.string().optional(),
+    account: z
+      .string({
+        error:
+          'A line-level `account` must be the Holded account ObjectId (a string); Holded silently drops a numeric PGC code such as 70500000.',
+      })
+      .optional(),
+    projectId: z.string().optional(),
+    productId: z.string().optional(),
+    serviceId: z.string().optional(),
+  })
+  .strict()
+  .superRefine((item, ctx) => {
+    if (item.price === undefined && item.subtotal === undefined && item.type !== 'title') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['price'],
+        message: 'Each line needs a unit price: set `price` (or the legacy `subtotal` alias).',
+      });
+    }
+  });
+
+/** Root fields shared by the create and update schemas. */
+const recurringWriteFields = {
+  contactName: z.string().optional(),
+  convertAutomatically: z.boolean().optional(),
+  dueDays: z.number().int().optional(),
+  contactPaymentDay: z.number().int().min(1).max(31).optional(),
+  endDate: isoDateSchema.optional(),
+  date: isoDateSchema.optional(),
+  description: z.string().optional(),
+  notes: z.string().optional(),
+  documentBody: z.string().optional(),
+  language: z.string().optional(),
+  currency: z.string().optional(),
+  currencyChange: z.number().optional(),
+  tags: z.array(z.string()).optional(),
+  numberLineId: z.string().optional(),
+  discount: z.number().min(0).max(100).optional(),
+  designId: z.string().optional(),
+  /** Cascaded to every line as `account`; a line with its own account keeps it. */
+  expAccountId: z.string().optional(),
+};
+
+export const createRecurringInvoiceSchema = z.object({
+  contactId: z.string().min(1),
+  periodicity: periodicityEnum,
+  items: z.array(recurringItemSchema).min(1),
+  ...recurringWriteFields,
+});
+
+export const updateRecurringInvoiceSchema = recurringInvoiceIdSchema.merge(
+  z.object({
+    contactId: z.string().optional(),
+    periodicity: periodicityEnum.optional(),
+    items: z.array(recurringItemSchema).min(1).optional(),
+    ...recurringWriteFields,
+  })
+);
+
 export function withValidation<TInput, TOutput>(
   schema: z.ZodSchema<TInput>,
   handler: (args: TInput) => Promise<TOutput>
