@@ -25,6 +25,7 @@ import { getAccountingTools } from './tools/accounting.js';
 import { getTeamTools } from './tools/team.js';
 import { getLedgerTools } from './tools/ledger.js';
 import { getTreasuryV2Tools } from './tools/treasury-v2.js';
+import { getRecurringInvoiceTools } from './tools/recurring-invoices.js';
 
 // Initialize multi-tenancy support
 const tenantConfigs = loadTenantConfigs();
@@ -81,6 +82,13 @@ const rateLimiter = new RateLimiter({
     delete_service: { maxRequests: 10, windowMs: 60000 },
     delete_warehouse: { maxRequests: 10, windowMs: 60000 },
     delete_product: { maxRequests: 10, windowMs: 60000 },
+    // recurring invoices
+    create_recurring_invoice: { maxRequests: 20, windowMs: 60000 },
+    update_recurring_invoice: { maxRequests: 30, windowMs: 60000 },
+    delete_recurring_invoice: { maxRequests: 10, windowMs: 60000 },
+    skip_recurring_invoice_occurrence: { maxRequests: 10, windowMs: 60000 },
+    list_recurring_invoices: { maxRequests: 200, windowMs: 60000 },
+    get_recurring_invoice: { maxRequests: 200, windowMs: 60000 },
   },
 });
 
@@ -104,6 +112,7 @@ const allTools = {
   ...getTeamTools(client),
   ...getLedgerTools(client),
   ...getTreasuryV2Tools(client),
+  ...getRecurringInvoiceTools(client),
 };
 
 // Create server
@@ -193,6 +202,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     ...getTeamTools(tenantContext.client),
     ...getLedgerTools(tenantContext.client),
     ...getTreasuryV2Tools(tenantContext.client),
+    ...getRecurringInvoiceTools(tenantContext.client),
   };
 
   const tool = tenantTools[name as keyof typeof tenantTools];

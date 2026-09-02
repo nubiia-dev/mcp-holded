@@ -111,26 +111,67 @@ export const documentItemSchema = z
     name: z.string(),
     /** Quantity of units */
     units: z.number(),
-    /** Line subtotal (price × units before tax/discount) */
-    subtotal: z.number(),
+    /** Unit price — the Holded v2 field name. Preferred over the legacy `subtotal` alias. */
+    price: z.number().optional(),
+    /**
+     * Legacy alias for `price`. Despite the name, Holded stores this as the UNIT
+     * price, not the line total: 2 units at 258 means `subtotal: 258`.
+     */
+    subtotal: z.number().optional(),
     /** Optional line description */
     desc: z.string().optional(),
+    /** Line type. A `title` line is a section heading and carries no amounts. */
+    type: z.enum(['product', 'service', 'title']).optional(),
     /** SKU / product reference code */
     sku: z.string().optional(),
     /** Tax percentage (0–100) — alternative to `taxes` */
     tax: z.number().min(0).max(100).optional(),
     /**
-     * Holded tax ID(s) for the line item.
-     * Accepts exactly 1 tax ID when provided; an empty array is rejected.
-     * Use this instead of `tax` when you need to reference a specific Holded tax definition.
+     * Holded tax ids for the line, e.g. `["s_iva_21", "s_ret_19"]`. v2 accepts
+     * SEVERAL taxes per line (VAT plus IRPF retention); an empty array is rejected.
      */
-    taxes: z.array(z.string()).min(1).max(1).optional(),
+    taxes: z.array(z.string()).min(1).optional(),
     /** Discount percentage (0–100) */
     discount: z.number().min(0).max(100).optional(),
     /** Service ID to link the line to a Holded service catalog entry */
     serviceId: z.string().optional(),
+    /** Product ID to link the line to a Holded product */
+    productId: z.string().optional(),
+    /**
+     * Accounting account for this line, as the Holded ObjectId — NOT the PGC code.
+     * Verified live: the ObjectId persists, a numeric account code is silently
+     * dropped. Omit it to let the document-level `expAccountId` cascade instead.
+     * Use it when lines need DIFFERENT accounts in the same document.
+     */
+    account: z
+      .string({
+        error:
+          'A line-level `account` must be the Holded account ObjectId (a string); Holded silently drops a numeric PGC code such as 62900000.',
+      })
+      .optional(),
+    /** Project ObjectId to link the line to a Holded project */
+    projectId: z.string().optional(),
+    /** IRPF retention percentage for this line; overrides the document-level cascade */
+    retention: z.number().optional(),
+    /** Tags to classify the line */
+    tags: z.array(z.string()).optional(),
+    /** Product weight for this line */
+    weight: z.number().optional(),
+    /** Cost price for this line */
+    costPrice: z.number().optional(),
+    /** Unit of measure for this line (e.g. kg, units, litros) */
+    unitType: z.string().optional(),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((item, ctx) => {
+    if (item.price === undefined && item.subtotal === undefined && item.type !== 'title') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['price'],
+        message: 'Each line needs a unit price: set `price` (or the legacy `subtotal` alias).',
+      });
+    }
+  });
 
 // Document schemas
 export const documentIdSchema = z.object({
@@ -211,9 +252,11 @@ export const PURCHASE_DOC_TYPES = new Set<string>(['purchase', 'purchaserefund',
  * silent-fail traps where Holded accepts a write but ignores the field, so the
  * caller never learns the value was dropped:
  *
- * - **#7** — `account` on a line item. The expense/income account must be set at
- *   document level via `expAccountId`, which cascades to every line; a line-level
- *   `account` is silently ignored.
+ * - **#7** — a NUMERIC `account` on a line item (the PGC code, e.g. 62900000).
+ *   Holded v2 does accept a line-level `account`, but only as the account
+ *   ObjectId; a numeric code is silently dropped. Set `expAccountId` at document
+ *   level to cascade one account to every line, or pass the ObjectId per line
+ *   when the lines need different accounts.
  * - **#11** — `retention` (IRPF) on a purchase document. There is no API to set
  *   it on purchases (UI-only), so accepting it would report a false success.
  *
@@ -225,12 +268,12 @@ function assertDocumentWriteSafety(
   ctx: z.RefinementCtx
 ): void {
   data.items?.forEach((item, index) => {
-    if (item && typeof item === 'object' && 'account' in item) {
+    if (item && typeof item === 'object' && 'account' in item && typeof item.account !== 'string') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['items', index, 'account'],
         message:
-          'Holded silently ignores `account` on document line items. Set the account at document level via `expAccountId`, which cascades to every line.',
+          'A line-level `account` must be the Holded account ObjectId (a string); Holded silently drops a numeric PGC code such as 62900000. Look the id up with list_expenses_accounts / get_chart_of_accounts, or set the account at document level via `expAccountId`.',
       });
     }
   });
@@ -244,21 +287,63 @@ function assertDocumentWriteSafety(
   }
 }
 
+/**
+ * A document date accepted by the write tools: either an ISO `YYYY-MM-DD` string
+ * (what the Holded v2 API itself takes) or a Unix timestamp in seconds, kept for
+ * backwards compatibility. Timestamps are converted to ISO in UTC, so prefer the
+ * string form to avoid a day shift around midnight.
+ */
+export const documentDateSchema = z.union([
+  z.number().int(),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use an ISO date, YYYY-MM-DD'),
+]);
+
+/**
+ * Root document fields shared by create_document and update_document. All optional,
+ * all mapped to their Holded v2 snake_case counterparts in `toV2DocumentBody`.
+ */
+export const documentWriteFields = {
+  /** Due date (ISO `YYYY-MM-DD` or Unix seconds) → `due_date` */
+  dueDate: documentDateSchema.optional(),
+  /** Free-text document description → `description` (the concept shown in Holded) */
+  description: z.string().optional(),
+  /** Custom field values, e.g. `[{ field: 'PROYECTO:', value: 'Oficina' }]` */
+  customFields: z.array(z.object({ field: z.string().min(1), value: z.string() })).optional(),
+  /** Numbering series ObjectId → `number_line_id` (get_numbering_series) */
+  numberLineId: z.string().optional(),
+  /** Default payment method ObjectId → `payment_method_id` */
+  paymentMethodId: z.string().optional(),
+  /** Document design template ObjectId → `design_id` */
+  designId: z.string().optional(),
+  /** Warehouse ObjectId → `warehouse_id` */
+  warehouseId: z.string().optional(),
+  /** ISO 639-1 language code, e.g. `es` */
+  language: z.string().optional(),
+  /** Rich content printed on the document → `body` */
+  documentBody: z.string().optional(),
+  /** Document-level tags */
+  tags: z.array(z.string()).optional(),
+  /** Global discount percentage applied to the document */
+  discount: z.number().min(0).max(100).optional(),
+  /** FX rate → `currency_change` */
+  currencyChange: z.number().optional(),
+};
+
 export const createDocumentSchema = z
   .object({
     docType: docTypeEnum,
     contactId: z.string().min(1),
     items: z.array(documentItemSchema),
     /**
-     * Document date as Unix timestamp (integer). Required by the Holded API.
-     * If omitted, Holded will reject the request. Use Math.floor(Date.now() / 1000)
-     * to get the current timestamp.
+     * Document issue date: ISO `YYYY-MM-DD` (preferred) or a Unix timestamp in
+     * seconds. Required by the Holded API — if omitted the request is rejected.
      */
-    date: z.number().int(),
+    date: documentDateSchema,
     notes: z.string().optional(),
     currency: z.string().optional(),
     /** Document reference number (e.g. invoice number from supplier) */
     invoiceNum: z.string().optional(),
+    ...documentWriteFields,
     /** Sales channel ID to associate with the document */
     salesChannelId: z.string().optional(),
     /** Expense account ID for expense documents */
@@ -294,11 +379,12 @@ export const updateDocumentSchema = documentIdSchema
        * Document date as Unix timestamp (integer).
        * Required by the Holded API when updating the date field.
        */
-      date: z.number().int().optional(),
+      date: documentDateSchema.optional(),
       notes: z.string().optional(),
       currency: z.string().optional(),
       /** Document reference number (e.g. invoice number from supplier) */
       invoiceNum: z.string().optional(),
+      ...documentWriteFields,
       /** Sales channel ID to associate with the document */
       salesChannelId: z.string().optional(),
       /** Expense account ID for expense documents */
@@ -543,6 +629,114 @@ export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown): T {
 /**
  * Type-safe validation wrapper for tool handlers
  */
+// ---------------------------------------------------------------------------
+// Recurring invoices (facturas recurrentes) — Holded API v2 /recurring-invoices
+// ---------------------------------------------------------------------------
+
+/** Recurrence interval codes accepted by the v2 API. */
+export const periodicityEnum = z.enum(['d', 'w', 'bw', 'm', 'bm', 'q', 'ba', 'a']);
+
+// Dates on these endpoints are ISO `YYYY-MM-DD`; isoDateSchema above already
+// validates the format and rejects impossible calendar dates.
+
+export const recurringInvoiceIdSchema = z.object({
+  recurringInvoiceId: z.string().min(1),
+});
+
+export const listRecurringInvoicesSchema = z
+  .object({
+    contactId: z.string().optional(),
+    cursor: z.string().optional(),
+  })
+  .merge(paginationSchema)
+  .merge(fieldFilteringSchema);
+
+export const recurringScheduleSchema = recurringInvoiceIdSchema.merge(
+  z.object({ until: isoDateSchema.optional() })
+);
+
+export const skipRecurringOccurrenceSchema = recurringInvoiceIdSchema.merge(
+  z.object({ date: isoDateSchema.optional() })
+);
+
+/**
+ * One line of a recurring invoice. The documented body is SMALLER than a regular
+ * document line: no retention, weight, cost price or unit type. `.strict()` is
+ * deliberate here, so a field the endpoint does not accept fails loudly instead
+ * of being posted and dropped without trace.
+ */
+export const recurringItemSchema = z
+  .object({
+    name: z.string(),
+    units: z.number(),
+    price: z.number().optional(),
+    /** Legacy alias for `price`; it is the UNIT price, not the line total. */
+    subtotal: z.number().optional(),
+    desc: z.string().optional(),
+    type: z.enum(['product', 'service', 'title']).optional(),
+    discount: z.number().min(0).max(100).optional(),
+    taxes: z.array(z.string()).min(1).optional(),
+    tags: z.array(z.string()).optional(),
+    sku: z.string().optional(),
+    account: z
+      .string({
+        error:
+          'A line-level `account` must be the Holded account ObjectId (a string); Holded silently drops a numeric PGC code such as 70500000.',
+      })
+      .optional(),
+    projectId: z.string().optional(),
+    productId: z.string().optional(),
+    serviceId: z.string().optional(),
+  })
+  .strict()
+  .superRefine((item, ctx) => {
+    if (item.price === undefined && item.subtotal === undefined && item.type !== 'title') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['price'],
+        message: 'Each line needs a unit price: set `price` (or the legacy `subtotal` alias).',
+      });
+    }
+  });
+
+/** Root fields shared by the create and update schemas. */
+const recurringWriteFields = {
+  contactName: z.string().optional(),
+  convertAutomatically: z.boolean().optional(),
+  dueDays: z.number().int().optional(),
+  contactPaymentDay: z.number().int().min(1).max(31).optional(),
+  endDate: isoDateSchema.optional(),
+  date: isoDateSchema.optional(),
+  description: z.string().optional(),
+  notes: z.string().optional(),
+  documentBody: z.string().optional(),
+  language: z.string().optional(),
+  currency: z.string().optional(),
+  currencyChange: z.number().optional(),
+  tags: z.array(z.string()).optional(),
+  numberLineId: z.string().optional(),
+  discount: z.number().min(0).max(100).optional(),
+  designId: z.string().optional(),
+  /** Cascaded to every line as `account`; a line with its own account keeps it. */
+  expAccountId: z.string().optional(),
+};
+
+export const createRecurringInvoiceSchema = z.object({
+  contactId: z.string().min(1),
+  periodicity: periodicityEnum,
+  items: z.array(recurringItemSchema).min(1),
+  ...recurringWriteFields,
+});
+
+export const updateRecurringInvoiceSchema = recurringInvoiceIdSchema.merge(
+  z.object({
+    contactId: z.string().optional(),
+    periodicity: periodicityEnum.optional(),
+    items: z.array(recurringItemSchema).min(1).optional(),
+    ...recurringWriteFields,
+  })
+);
+
 export function withValidation<TInput, TOutput>(
   schema: z.ZodSchema<TInput>,
   handler: (args: TInput) => Promise<TOutput>
