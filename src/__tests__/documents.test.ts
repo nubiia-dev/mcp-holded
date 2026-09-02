@@ -115,15 +115,53 @@ describe('Document Tools', () => {
       });
     });
 
-    it('should reject date as string (must be Unix timestamp integer)', async () => {
+    it('should accept an ISO date string and forward it unchanged', async () => {
+      await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'contact-123',
+        items: [],
+        date: '2024-01-15',
+      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.date).toBe('2024-01-15');
+    });
+
+    it('should reject a malformed date string', async () => {
       await expect(
         tools.create_document.handler({
           docType: 'invoice' as const,
           contactId: 'contact-123',
           items: [],
-          date: '2024-01-15' as any,
+          date: '15/01/2024' as any,
         })
       ).rejects.toThrow();
+    });
+
+    it('should forward dueDate as due_date', async () => {
+      await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'contact-123',
+        items: [{ name: 'X', units: 1, price: 100 }],
+        date: '2026-08-31',
+        dueDate: '2026-09-30',
+      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.due_date).toBe('2026-09-30');
+    });
+
+    it('should forward description and customFields', async () => {
+      await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'contact-123',
+        items: [{ name: 'X', units: 1, price: 100 }],
+        date: '2026-08-31',
+        description: 'Alquiler Oficina',
+        customFields: [{ field: 'PROYECTO:', value: 'Oficina' }],
+      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.description).toBe('Alquiler Oficina');
+      expect(body.custom_fields).toEqual([{ field: 'PROYECTO:', value: 'Oficina' }]);
+      expect(body).not.toHaveProperty('customFields');
     });
 
     it('should reject missing date field', async () => {
@@ -304,14 +342,14 @@ describe('Document Tools', () => {
       });
     });
 
-    it('should reject date as string when updating', async () => {
-      await expect(
-        tools.update_document.handler({
-          docType: 'invoice' as const,
-          documentId: 'doc-123',
-          date: '2024-01-15' as any,
-        })
-      ).rejects.toThrow();
+    it('should accept an ISO date string when updating', async () => {
+      await tools.update_document.handler({
+        docType: 'invoice' as const,
+        documentId: 'doc-123',
+        date: '2024-01-15',
+      });
+      const body = (client.put as any).mock.calls[0][1];
+      expect(body.date).toBe('2024-01-15');
     });
 
     it('should accept currency field when updating a document', async () => {
@@ -709,14 +747,14 @@ describe('Document Tools', () => {
       expect(result.success).toBe(true);
     });
 
-    it('documentItemSchema should reject taxes array with more than 1 element', () => {
+    it('documentItemSchema should accept several taxes per line (VAT + IRPF retention)', () => {
       const result = documentItemSchema.safeParse({
         name: 'Service X',
         units: 1,
         subtotal: 100,
-        taxes: ['tax-id-1', 'tax-id-2'],
+        taxes: ['s_iva_21', 's_ret_19'],
       });
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
     });
 
     it('documentItemSchema should accept taxes as undefined (optional)', () => {
@@ -739,15 +777,15 @@ describe('Document Tools', () => {
       expect(result.success).toBe(true);
     });
 
-    it('create_document inputSchema should include taxes with maxItems: 1 on line items', () => {
+    it('create_document inputSchema should allow several taxes per line item', () => {
       const itemsSchema = (tools.create_document.inputSchema.properties as any).items;
-      expect(itemsSchema.items.properties.taxes.maxItems).toBe(1);
       expect(itemsSchema.items.properties.taxes.minItems).toBe(1);
+      expect(itemsSchema.items.properties.taxes.maxItems).toBeUndefined();
     });
 
-    it('update_document inputSchema should include taxes with maxItems: 1 on line items', () => {
+    it('update_document inputSchema should allow several taxes per line item', () => {
       const itemsSchema = (tools.update_document.inputSchema.properties as any).items;
-      expect(itemsSchema.items.properties.taxes.maxItems).toBe(1);
+      expect(itemsSchema.items.properties.taxes.maxItems).toBeUndefined();
     });
 
     it('should pass taxes array in line items to the API on create', async () => {
@@ -904,14 +942,14 @@ describe('Document Tools', () => {
       expect(result.success).toBe(false);
     });
 
-    it('should reject taxes array with more than 1 element', () => {
+    it('should accept a taxes array with more than 1 element (VAT + retention)', () => {
       const result = documentItemSchema.safeParse({
         name: 'X',
         units: 1,
         subtotal: 10,
         taxes: ['id-1', 'id-2'],
       });
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
     });
 
     it('create_document should reject items with missing required line item fields', async () => {
@@ -1107,19 +1145,19 @@ describe('Document Tools', () => {
       expect(result.success).toBe(true);
     });
 
-    it('should reject taxes with more than 1 element', () => {
+    it('should accept taxes with more than 1 element', () => {
       const result = documentItemSchema.safeParse({
         name: 'Service X',
         units: 1,
         subtotal: 100,
         taxes: ['tax-1', 'tax-2'],
       });
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
     });
   });
 
   describe('write-safety guards (silent-fail field handling)', () => {
-    it('#7 rejects a line-level `account` on create (use expAccountId instead)', async () => {
+    it('#7 rejects a NUMERIC line-level `account` (the PGC code) on create', async () => {
       await expect(
         tools.create_document.handler({
           docType: 'purchase' as const,
@@ -1127,17 +1165,32 @@ describe('Document Tools', () => {
           items: [{ name: 'Item', units: 1, subtotal: 50, account: 60000000 } as any],
           date: 1700000000,
         })
-      ).rejects.toThrow(/expAccountId/);
+      ).rejects.toThrow(/ObjectId/);
     });
 
-    it('#7 rejects a line-level `account` on update', async () => {
+    it('#7 rejects a NUMERIC line-level `account` on update', async () => {
       await expect(
         tools.update_document.handler({
           docType: 'invoice' as const,
           documentId: 'doc-1',
           items: [{ name: 'Item', units: 1, subtotal: 50, account: 70000000 } as any],
         })
-      ).rejects.toThrow(/expAccountId/);
+      ).rejects.toThrow(/ObjectId/);
+    });
+
+    it('#7 accepts a line-level `account` ObjectId and forwards it per line', async () => {
+      await tools.create_document.handler({
+        docType: 'invoice' as const,
+        contactId: 'contact-1',
+        items: [
+          { name: 'Alquiler', units: 2, price: 258, account: 'bbbbbbbbbbbbbbbbbbbbbbb2' },
+          { name: 'Servicios', units: 1, price: 1283, account: 'ccccccccccccccccccccccc3' },
+        ],
+        date: '2026-08-31',
+      });
+      const body = (client.post as any).mock.calls[0][1];
+      expect(body.items[0].account).toBe('bbbbbbbbbbbbbbbbbbbbbbb2');
+      expect(body.items[1].account).toBe('ccccccccccccccccccccccc3');
     });
 
     it('#11 rejects `retention` on a purchase document', async () => {

@@ -76,21 +76,48 @@ export type DocumentType =
  * are silently omitted to avoid leaking stale v1 names into the v2 body.
  *
  * Mapping table:
- *   name → name | units → units | subtotal → price (unit price) | desc → description
- *   sku → sku | taxes → taxes | tax → tax | discount → discount | serviceId → service_id
+ *   name → name | units → units | price → price | subtotal → price (legacy alias,
+ *   also a UNIT price) | desc → description | type → type | sku → sku
+ *   taxes → taxes (several allowed) | tax → tax | discount → discount
+ *   serviceId → service_id | productId → product_id | account → account (ObjectId)
+ *   projectId → project_id | retention → retention | tags → tags | weight → weight
+ *   costPrice → cost_price | unitType → unit_type
  */
 export function toV2DocumentItem(item: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (item.name !== undefined) out.name = item.name;
   if (item.units !== undefined) out.units = item.units;
-  if (item.subtotal !== undefined) out.price = item.subtotal; // unit price
+  // `price` is the v2 field; `subtotal` is the legacy alias and also a UNIT price.
+  if (item.subtotal !== undefined) out.price = item.subtotal;
+  if (item.price !== undefined) out.price = item.price;
   if (item.desc !== undefined) out.description = item.desc;
+  if (item.type !== undefined) out.type = item.type;
   if (item.sku !== undefined) out.sku = item.sku;
   if (item.taxes !== undefined) out.taxes = item.taxes;
   if (item.tax !== undefined) out.tax = item.tax;
   if (item.discount !== undefined) out.discount = item.discount;
   if (item.serviceId !== undefined) out.service_id = item.serviceId;
+  if (item.productId !== undefined) out.product_id = item.productId;
+  if (item.account !== undefined) out.account = item.account;
+  if (item.projectId !== undefined) out.project_id = item.projectId;
+  if (item.retention !== undefined) out.retention = item.retention;
+  if (item.tags !== undefined) out.tags = item.tags;
+  if (item.weight !== undefined) out.weight = item.weight;
+  if (item.costPrice !== undefined) out.cost_price = item.costPrice;
+  if (item.unitType !== undefined) out.unit_type = item.unitType;
   return out;
+}
+
+/**
+ * Normalise a document date for the v2 API: an ISO `YYYY-MM-DD` string is passed
+ * through untouched, a Unix timestamp in seconds is converted to ISO in UTC.
+ *
+ * Prefer the string form. A timestamp taken from a local midnight lands on the
+ * previous day once converted to UTC in any positive offset (Spain included).
+ */
+export function toV2Date(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return new Date((value as number) * 1000).toISOString().slice(0, 10);
 }
 
 /**
@@ -98,7 +125,12 @@ export function toV2DocumentItem(item: Record<string, unknown>): Record<string, 
  *
  * Root field mapping (tool arg → v2 body field):
  *   contactId      → contact_id
- *   date           → date as ISO string YYYY-MM-DD (converted from Unix seconds)
+ *   date           → date as ISO YYYY-MM-DD (passed through, or converted from Unix seconds)
+ *   dueDate        → due_date (same conversion)
+ *   description    → description | customFields → custom_fields | tags → tags
+ *   numberLineId   → number_line_id | paymentMethodId → payment_method_id
+ *   designId       → design_id | warehouseId → warehouse_id | language → language
+ *   documentBody   → body | discount → discount | currencyChange → currency_change
  *   invoiceNum     → number (persisted as document_number)
  *   approveDoc     → draft (INVERTED: true → false, false → true; only emitted when present)
  *   notes          → notes (as-is)
@@ -117,10 +149,8 @@ export function toV2DocumentBody(args: Record<string, unknown>): Record<string, 
 
   if (args.contactId !== undefined) body.contact_id = args.contactId;
 
-  if (args.date !== undefined) {
-    // Convert Unix seconds to YYYY-MM-DD (UTC)
-    body.date = new Date((args.date as number) * 1000).toISOString().slice(0, 10);
-  }
+  if (args.date !== undefined) body.date = toV2Date(args.date);
+  if (args.dueDate !== undefined) body.due_date = toV2Date(args.dueDate);
 
   if (args.invoiceNum !== undefined) body.number = args.invoiceNum;
 
@@ -132,6 +162,17 @@ export function toV2DocumentBody(args: Record<string, unknown>): Record<string, 
 
   if (args.notes !== undefined) body.notes = args.notes;
   if (args.currency !== undefined) body.currency = args.currency;
+  if (args.currencyChange !== undefined) body.currency_change = args.currencyChange;
+  if (args.description !== undefined) body.description = args.description;
+  if (args.customFields !== undefined) body.custom_fields = args.customFields;
+  if (args.numberLineId !== undefined) body.number_line_id = args.numberLineId;
+  if (args.paymentMethodId !== undefined) body.payment_method_id = args.paymentMethodId;
+  if (args.designId !== undefined) body.design_id = args.designId;
+  if (args.warehouseId !== undefined) body.warehouse_id = args.warehouseId;
+  if (args.language !== undefined) body.language = args.language;
+  if (args.documentBody !== undefined) body.body = args.documentBody;
+  if (args.tags !== undefined) body.tags = args.tags;
+  if (args.discount !== undefined) body.discount = args.discount;
 
   // salesChannelId → sales_channel_id (best-effort; unverified live — see v2 mapping spec)
   if (args.salesChannelId !== undefined) body.sales_channel_id = args.salesChannelId;
@@ -148,9 +189,12 @@ export function toV2DocumentBody(args: Record<string, unknown>): Record<string, 
       );
     }
 
-    // retention → per-line (best-effort; v2 has no root retention field)
+    // retention → per-line (v2 has no root retention field). A line that sets its
+    // own retention keeps it, so mixed-retention documents are possible.
     if (args.retention !== undefined) {
-      items = items.map((item) => ({ ...item, retention: args.retention }));
+      items = items.map((item) =>
+        item.retention !== undefined ? item : { ...item, retention: args.retention }
+      );
     }
 
     body.items = items;
@@ -323,7 +367,7 @@ export function getDocumentTools(client: HoldedClient) {
     // Create Document
     create_document: {
       description:
-        'Create a new document (invoice, estimate, purchase, etc.). By default the document is approved (finalized) so it appears in the Holded UI; pass approveDoc:false to create a draft instead. Set the expense/income account at document level via `expAccountId` (it cascades to all lines); a per-line `account` is rejected because Holded ignores it. On SALES documents an auto-incrementing numbering series may OVERRIDE the requested `invoiceNum` — the tool re-reads the created document and returns a `_warnings` note if that happened. On purchases the supplier number in `invoiceNum` is preserved. `retention` (IRPF) is accepted on sales but rejected on purchases (Holded ignores it there).',
+        'Create a new document (invoice, estimate, purchase, etc.). By default the document is approved (finalized) so it appears in the Holded UI; pass approveDoc:false to create a draft instead. Line `price` is the UNIT price (`subtotal` is a legacy alias for the same thing). A line takes SEVERAL taxes, so VAT and IRPF retention go together as taxes:["s_iva_21","s_ret_19"] (or use the document-level `retention`, which cascades to lines that do not set their own). Set the expense/income account at document level via `expAccountId` (it cascades to every line), or per line via the line `account` when lines need different accounts — always the account ObjectId, never the PGC code. `dueDate`, `description`, `customFields` (e.g. PROYECTO:), `numberLineId`, `paymentMethodId` and `designId` are supported; dates take ISO YYYY-MM-DD. On SALES documents an auto-incrementing numbering series may OVERRIDE the requested `invoiceNum` — the tool re-reads the created document and returns a `_warnings` note if that happened, and likewise when Holded drops a requested `dueDate` or `customFields`. On purchases the supplier number in `invoiceNum` is preserved. `retention` (IRPF) is accepted on sales but rejected on purchases (Holded ignores it there).',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -356,11 +400,21 @@ export function getDocumentTools(client: HoldedClient) {
               properties: {
                 name: { type: 'string', description: 'Product or service name' },
                 units: { type: 'number', description: 'Quantity of units' },
+                price: {
+                  type: 'number',
+                  description: 'UNIT price (v2 field). 2 units at 258 → price 258',
+                },
                 subtotal: {
                   type: 'number',
-                  description: 'Line subtotal (price × units before tax/discount)',
+                  description:
+                    'Legacy alias for price. Despite the name it is the UNIT price, not the line total. Prefer `price`.',
                 },
                 desc: { type: 'string', description: 'Optional line description' },
+                type: {
+                  type: 'string',
+                  enum: ['product', 'service', 'title'],
+                  description: 'Line type. A title line is a heading and carries no amounts.',
+                },
                 sku: { type: 'string', description: 'SKU / product reference code' },
                 tax: {
                   type: 'number',
@@ -369,27 +423,118 @@ export function getDocumentTools(client: HoldedClient) {
                 taxes: {
                   type: 'array',
                   description:
-                    'Holded tax ID(s) for the line item (max 1 element). Use instead of tax when referencing a specific Holded tax definition.',
+                    'Holded tax ids for the line, e.g. ["s_iva_21", "s_ret_19"]. SEVERAL taxes per line are allowed (VAT plus IRPF retention). Use instead of `tax` to reference specific Holded tax definitions.',
                   items: { type: 'string' },
                   minItems: 1,
-                  maxItems: 1,
                 },
                 discount: { type: 'number', description: 'Discount percentage (0–100)' },
                 serviceId: {
                   type: 'string',
                   description: 'Service ID to link to a Holded service catalog entry',
                 },
+                productId: {
+                  type: 'string',
+                  description: 'Product ID to link to a Holded product',
+                },
+                account: {
+                  type: 'string',
+                  description:
+                    'Accounting account for THIS line, as the Holded ObjectId (not the PGC code, which Holded drops). Only needed when lines require different accounts; otherwise use the document-level expAccountId.',
+                },
+                projectId: {
+                  type: 'string',
+                  description: 'Project ObjectId to link this line to a Holded project',
+                },
+                retention: {
+                  type: 'number',
+                  description:
+                    'IRPF retention percentage for this line; overrides the document-level retention cascade',
+                },
+                tags: {
+                  type: 'array',
+                  description: 'Tags to classify the line',
+                  items: { type: 'string' },
+                },
+                weight: { type: 'number', description: 'Product weight for this line' },
+                costPrice: { type: 'number', description: 'Cost price for this line' },
+                unitType: {
+                  type: 'string',
+                  description: 'Unit of measure for this line (e.g. kg, units, litros)',
+                },
               },
-              required: ['name', 'units', 'subtotal'],
+              required: ['name', 'units'],
             },
           },
           date: {
-            type: 'number',
-            description: 'Document date as Unix timestamp',
+            anyOf: [{ type: 'string' }, { type: 'number' }],
+            description:
+              'Document issue date. ISO YYYY-MM-DD (preferred) or a Unix timestamp in seconds.',
+          },
+          dueDate: {
+            anyOf: [{ type: 'string' }, { type: 'number' }],
+            description:
+              'Due date (vencimiento). ISO YYYY-MM-DD (preferred) or a Unix timestamp in seconds.',
           },
           notes: {
             type: 'string',
-            description: 'Notes for the document',
+            description:
+              'Internal notes, visible only to your team in Holded (not printed on the document)',
+          },
+          description: {
+            type: 'string',
+            description:
+              'Document description — the concept Holded shows in the documents list. Left empty, Holded fills it with the first line name.',
+          },
+          customFields: {
+            type: 'array',
+            description:
+              'Custom field values, e.g. [{"field": "PROYECTO:", "value": "Oficina"}]. The field name must match the custom field configured in Holded.',
+            items: {
+              type: 'object',
+              properties: {
+                field: { type: 'string', description: 'Custom field identifier' },
+                value: { type: 'string', description: 'Value to store' },
+              },
+              required: ['field', 'value'],
+            },
+          },
+          numberLineId: {
+            type: 'string',
+            description:
+              'Numbering series ObjectId (get_numbering_series). Picks the series that numbers the document on approval.',
+          },
+          paymentMethodId: {
+            type: 'string',
+            description: 'Default payment method ObjectId (list_payment_methods)',
+          },
+          designId: {
+            type: 'string',
+            description: 'Document design template ObjectId',
+          },
+          warehouseId: {
+            type: 'string',
+            description: 'Warehouse ObjectId',
+          },
+          language: {
+            type: 'string',
+            description: 'ISO 639-1 language code for the document, e.g. es, ca, en',
+          },
+          documentBody: {
+            type: 'string',
+            description: 'Rich content printed on the document body',
+          },
+          tags: {
+            type: 'array',
+            description: 'Document-level tags',
+            items: { type: 'string' },
+          },
+          discount: {
+            type: 'number',
+            description: 'Global discount percentage (0–100) applied to the document',
+          },
+          currencyChange: {
+            type: 'number',
+            description: 'FX rate when the document currency differs from the base currency',
           },
           currency: {
             type: 'string',
@@ -430,10 +575,13 @@ export function getDocumentTools(client: HoldedClient) {
         const postPath = docType === 'purchaserefund' ? '/purchases/refund' : docBase(docType);
         const result = (await client.post(postPath, body)) as Record<string, unknown>;
         const warnings: string[] = [];
-        // #17 — on sales documents a numbering series may override the requested
-        // invoiceNum (now mapped to `number` in the v2 body). Re-read the created
-        // document to confirm what actually stuck.
-        if (body.number && !PURCHASE_DOC_TYPES.has(docType)) {
+        // Re-read the created document when we sent a field Holded is known to
+        // override or silently drop, and report what actually stuck:
+        //   #17 — on sales documents a numbering series may override `number`.
+        //   due_date / custom_fields — dropped when the series or the custom field
+        //   is not configured as requested, with no error in the POST response.
+        const checksNumber = Boolean(body.number) && !PURCHASE_DOC_TYPES.has(docType);
+        if (checksNumber || body.due_date || body.custom_fields) {
           const newId = typeof result?.id === 'string' ? result.id : undefined;
           if (newId) {
             try {
@@ -441,16 +589,35 @@ export function getDocumentTools(client: HoldedClient) {
                 `${docBase(docType)}/${newId}`,
                 undefined
               )) as Record<string, unknown>;
-              const persisted =
-                created?.invoiceNum ??
-                created?.docNumber ??
-                created?.invoice_num ??
-                created?.doc_number ??
-                created?.document_number;
-              if (persisted !== undefined && persisted !== body.number) {
-                warnings.push(
-                  `Requested invoiceNum "${body.number}" was overridden by the numbering series to "${String(persisted)}".`
-                );
+              if (checksNumber) {
+                const persisted =
+                  created?.invoiceNum ??
+                  created?.docNumber ??
+                  created?.invoice_num ??
+                  created?.doc_number ??
+                  created?.document_number;
+                if (persisted !== undefined && persisted !== body.number) {
+                  warnings.push(
+                    `Requested invoiceNum "${body.number}" was overridden by the numbering series to "${String(persisted)}".`
+                  );
+                }
+              }
+              if (body.due_date) {
+                const persistedDue = created?.due_date ?? created?.dueDate;
+                if (!persistedDue) {
+                  warnings.push(
+                    `Holded did not store the requested dueDate "${String(body.due_date)}" — set the due date in Holded, or check the contact payment terms.`
+                  );
+                }
+              }
+              if (Array.isArray(body.custom_fields) && body.custom_fields.length > 0) {
+                const persistedFields = created?.custom_fields ?? created?.customFields;
+                const stored = Array.isArray(persistedFields) ? persistedFields.length : 0;
+                if (stored < body.custom_fields.length) {
+                  warnings.push(
+                    `Holded stored ${stored} of the ${body.custom_fields.length} custom field(s) requested — check that each \`field\` name matches a custom field configured in Holded.`
+                  );
+                }
               }
             } catch {
               // Best-effort verification; never fail a successful create on it.
@@ -548,7 +715,8 @@ export function getDocumentTools(client: HoldedClient) {
 
     // Update Document
     update_document: {
-      description: 'Update an existing document',
+      description:
+        'Update an existing document. Same field set as create_document (ISO dates, `dueDate`, `description`, `customFields`, several taxes per line, per-line `account`/`projectId`), minus `approveDoc`: an approved document is locked by Holded, so updates only really apply to drafts. Sending `items` REPLACES every line, so pass the full list, not just the new ones.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -585,11 +753,21 @@ export function getDocumentTools(client: HoldedClient) {
               properties: {
                 name: { type: 'string', description: 'Product or service name' },
                 units: { type: 'number', description: 'Quantity of units' },
+                price: {
+                  type: 'number',
+                  description: 'UNIT price (v2 field). 2 units at 258 → price 258',
+                },
                 subtotal: {
                   type: 'number',
-                  description: 'Line subtotal (price × units before tax/discount)',
+                  description:
+                    'Legacy alias for price. Despite the name it is the UNIT price, not the line total. Prefer `price`.',
                 },
                 desc: { type: 'string', description: 'Optional line description' },
+                type: {
+                  type: 'string',
+                  enum: ['product', 'service', 'title'],
+                  description: 'Line type. A title line is a heading and carries no amounts.',
+                },
                 sku: { type: 'string', description: 'SKU / product reference code' },
                 tax: {
                   type: 'number',
@@ -598,27 +776,118 @@ export function getDocumentTools(client: HoldedClient) {
                 taxes: {
                   type: 'array',
                   description:
-                    'Holded tax ID(s) for the line item (max 1 element). Use instead of tax when referencing a specific Holded tax definition.',
+                    'Holded tax ids for the line, e.g. ["s_iva_21", "s_ret_19"]. SEVERAL taxes per line are allowed (VAT plus IRPF retention). Use instead of `tax` to reference specific Holded tax definitions.',
                   items: { type: 'string' },
                   minItems: 1,
-                  maxItems: 1,
                 },
                 discount: { type: 'number', description: 'Discount percentage (0–100)' },
                 serviceId: {
                   type: 'string',
                   description: 'Service ID to link to a Holded service catalog entry',
                 },
+                productId: {
+                  type: 'string',
+                  description: 'Product ID to link to a Holded product',
+                },
+                account: {
+                  type: 'string',
+                  description:
+                    'Accounting account for THIS line, as the Holded ObjectId (not the PGC code, which Holded drops). Only needed when lines require different accounts; otherwise use the document-level expAccountId.',
+                },
+                projectId: {
+                  type: 'string',
+                  description: 'Project ObjectId to link this line to a Holded project',
+                },
+                retention: {
+                  type: 'number',
+                  description:
+                    'IRPF retention percentage for this line; overrides the document-level retention cascade',
+                },
+                tags: {
+                  type: 'array',
+                  description: 'Tags to classify the line',
+                  items: { type: 'string' },
+                },
+                weight: { type: 'number', description: 'Product weight for this line' },
+                costPrice: { type: 'number', description: 'Cost price for this line' },
+                unitType: {
+                  type: 'string',
+                  description: 'Unit of measure for this line (e.g. kg, units, litros)',
+                },
               },
-              required: ['name', 'units', 'subtotal'],
+              required: ['name', 'units'],
             },
           },
           date: {
-            type: 'number',
-            description: 'Document date as Unix timestamp',
+            anyOf: [{ type: 'string' }, { type: 'number' }],
+            description:
+              'Document issue date. ISO YYYY-MM-DD (preferred) or a Unix timestamp in seconds.',
+          },
+          dueDate: {
+            anyOf: [{ type: 'string' }, { type: 'number' }],
+            description:
+              'Due date (vencimiento). ISO YYYY-MM-DD (preferred) or a Unix timestamp in seconds.',
           },
           notes: {
             type: 'string',
-            description: 'Notes for the document',
+            description:
+              'Internal notes, visible only to your team in Holded (not printed on the document)',
+          },
+          description: {
+            type: 'string',
+            description:
+              'Document description — the concept Holded shows in the documents list. Left empty, Holded fills it with the first line name.',
+          },
+          customFields: {
+            type: 'array',
+            description:
+              'Custom field values, e.g. [{"field": "PROYECTO:", "value": "Oficina"}]. The field name must match the custom field configured in Holded.',
+            items: {
+              type: 'object',
+              properties: {
+                field: { type: 'string', description: 'Custom field identifier' },
+                value: { type: 'string', description: 'Value to store' },
+              },
+              required: ['field', 'value'],
+            },
+          },
+          numberLineId: {
+            type: 'string',
+            description:
+              'Numbering series ObjectId (get_numbering_series). Picks the series that numbers the document on approval.',
+          },
+          paymentMethodId: {
+            type: 'string',
+            description: 'Default payment method ObjectId (list_payment_methods)',
+          },
+          designId: {
+            type: 'string',
+            description: 'Document design template ObjectId',
+          },
+          warehouseId: {
+            type: 'string',
+            description: 'Warehouse ObjectId',
+          },
+          language: {
+            type: 'string',
+            description: 'ISO 639-1 language code for the document, e.g. es, ca, en',
+          },
+          documentBody: {
+            type: 'string',
+            description: 'Rich content printed on the document body',
+          },
+          tags: {
+            type: 'array',
+            description: 'Document-level tags',
+            items: { type: 'string' },
+          },
+          discount: {
+            type: 'number',
+            description: 'Global discount percentage (0–100) applied to the document',
+          },
+          currencyChange: {
+            type: 'number',
+            description: 'FX rate when the document currency differs from the base currency',
           },
           currency: {
             type: 'string',
