@@ -29,6 +29,10 @@ jobs:
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
 
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1; Node 22 ships an older npm.
+      - name: Update npm for Trusted Publishing
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: npm ci
 
@@ -41,8 +45,50 @@ jobs:
         run: npm test
 
       - name: Release
+        id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # No NPM_TOKEN: @semantic-release/npm exchanges the job's OIDC identity (id-token: write)
+          # for a short-lived publish credential via the package's npm Trusted Publisher
+          # (nubiia-dev/mcp-holded, workflow release.yml). Provenance stays enabled below.
           NPM_CONFIG_PROVENANCE: true
         run: npx semantic-release
+
+      # El tag lo crea semantic-release con GITHUB_TOKEN, y GitHub no dispara
+      # workflows con eventos generados por su propio token: publish-mcp.yml
+      # nunca arrancaría solo. Por eso la publicación al registro se encadena
+      # aquí, condicionada a que esta ejecución haya publicado algo.
+      # npm tarda unos segundos en servir una versión recién publicada y el
+      # registro MCP la valida contra npm: sin esta espera, publish falla con
+      # "version not found" (pasó en mcp-borme 1.0.1).
+      - name: Wait for the version to be visible on npm
+        if: steps.release.outputs.released == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          PKG=$(node -p "require('./package.json').name")
+          for i in $(seq 1 30); do
+            if npm view "$PKG@$VERSION" version >/dev/null 2>&1; then
+              echo "$PKG@$VERSION is available on npm"
+              exit 0
+            fi
+            echo "Waiting for $PKG@$VERSION on npm ($i/30)..."
+            sleep 10
+          done
+          echo "::error::$PKG@$VERSION did not appear on npm after 5 minutes"
+          exit 1
+
+      - name: Download MCP Publisher
+        if: steps.release.outputs.released == 'true'
+        run: |
+          curl -L https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz -o mcp-publisher.tar.gz
+          tar -xzf mcp-publisher.tar.gz
+          chmod +x mcp-publisher
+
+      - name: Authenticate with MCP Registry (OIDC)
+        if: steps.release.outputs.released == 'true'
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        if: steps.release.outputs.released == 'true'
+        run: ./mcp-publisher publish

@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write  # Required for OIDC authentication
-  contents: read   # Required for repository checkout
+  id-token: write # Required for OIDC authentication
+  contents: read # Required for repository checkout
 
 jobs:
   publish-mcp:
@@ -30,24 +30,6 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      # Temporarily disabled - will re-enable after initial publication
-      # - name: Update server.json version
-      #   run: |
-      #     VERSION=$(node -p "require('./package.json').version")
-      #     echo "Updating server.json version to $VERSION"
-      #     node <<EOF
-      #       const fs = require('fs');
-      #       const server = JSON.parse(fs.readFileSync('server.json', 'utf8'));
-      #       server.version = '$VERSION';
-      #       if (server.packages && server.packages[0]) {
-      #         server.packages[0].version = '$VERSION';
-      #       }
-      #       fs.writeFileSync('server.json', JSON.stringify(server, null, 2) + '\n');
-      #       console.log('Version updated to: $VERSION');
-      #     EOF
-      #     echo "Updated server.json:"
-      #     cat server.json
 
       - name: Download MCP Publisher
         run: |
