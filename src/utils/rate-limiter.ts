@@ -45,7 +45,8 @@ export class RateLimiter {
     this.config = config;
 
     // Cleanup old records every minute to prevent memory leaks
-    setInterval(() => this.cleanup(), 60000);
+    // unref(): the timer must not keep the process alive once the MCP transport closes.
+    setInterval(() => this.cleanup(), 60000).unref();
   }
 
   /**
