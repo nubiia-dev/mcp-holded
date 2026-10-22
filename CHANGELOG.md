@@ -1,3 +1,10 @@
+## [2.0.3](https://github.com/nubiia-dev/mcp-holded/compare/v2.0.2...v2.0.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* unref the rate limiter cleanup timer so the process exits on stdin close ([2a5f341](https://github.com/nubiia-dev/mcp-holded/commit/2a5f341f30ff5767262d11f0bd59415b95020e0d))
+
 ## [2.0.2](https://github.com/nubiia-dev/mcp-holded/compare/v2.0.1...v2.0.2) (2026-07-07)
 
 
