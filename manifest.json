@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "mcp-holded",
   "display_name": "Holded MCP Server",
-  "version": "1.0.1",
+  "version": "2.0.2",
   "description": "MCP Server for Holded Invoice API - Manage invoices, contacts, products, and more",
   "long_description": "A comprehensive Model Context Protocol (MCP) server that provides AI assistants like Claude with access to the complete Holded Invoice API. This server enables seamless interaction with Holded's invoicing system, allowing you to manage documents (invoices, estimates, credit notes), contacts (clients and suppliers), products, treasury accounts, expenses, and more - all through natural language commands.\n\n**Features:**\n- 72 tools covering all major Holded API endpoints\n- Full document lifecycle management (create, read, update, delete, pay, send, get PDF)\n- Contact and product management with attachments and images\n- Treasury and expense account handling\n- Comprehensive sales channel, warehouse, and payment configuration\n- Tax and numbering series management\n- Contact groups and remittances support",
 
